@@ -207,7 +207,7 @@ export class GoplsClient {
         clientInfo: { name: 'mgland', version: '0.1.0' },
         rootUri: fileUri(this.root),
         workspaceFolders: [{ uri: fileUri(this.root), name: this.root.split('/').pop() || this.root }],
-        initializationOptions: { semanticTokens: true },
+        initializationOptions: { semanticTokens: true, staticcheck: true },
         capabilities: {
           workspace: { workspaceFolders: true, configuration: true },
           textDocument: {
@@ -611,20 +611,20 @@ export class GoplsClient {
         if (!this.owns(model.uri.toString())) return null
         try {
           await this.syncModel(model)
-          const markers = this.monaco.editor.getModelMarkers({ resource: model.uri, owner: 'gopls' })
-          const diagnostics: LspDiagnostic[] = markers.map((marker) => ({
-            range: {
-              start: { line: marker.startLineNumber - 1, character: marker.startColumn - 1 },
-              end: { line: marker.endLineNumber - 1, character: marker.endColumn - 1 },
-            },
-            message: marker.message,
-          }))
+          // gopls matches quick fixes to the exact diagnostics it published
+          // (their payloads ride in the diagnostic's data field), so forward
+          // the raw diagnostics overlapping the selection rather than
+          // rebuilding them from Monaco markers, which drop that metadata.
+          const requested = {
+            start: { line: range.startLineNumber - 1, character: range.startColumn - 1 },
+            end: { line: range.endLineNumber - 1, character: range.endColumn - 1 },
+          }
+          const diagnostics = (this.diagnostics.get(model.uri.toString()) ?? [])
+            .filter((diagnostic) => diagnostic.range.start.line <= requested.end.line
+              && diagnostic.range.end.line >= requested.start.line)
           const actions = await this.request<LspCodeAction[] | null>('textDocument/codeAction', {
             textDocument: { uri: model.uri.toString() },
-            range: {
-              start: { line: range.startLineNumber - 1, character: range.startColumn - 1 },
-              end: { line: range.endLineNumber - 1, character: range.endColumn - 1 },
-            },
+            range: requested,
             context: { diagnostics, only: undefined },
           })
           const mapped: Monaco.languages.CodeAction[] = []
@@ -907,7 +907,7 @@ export class GoplsClient {
   setConfig(settings: { localPrefix?: string }): void {
     this.goplsSettings = settings
     if (this.ready) {
-      void this.notify('workspace/didChangeConfiguration', { settings: { gopls: { ...settings } } }).catch(() => undefined)
+      void this.notify('workspace/didChangeConfiguration', { settings: { gopls: { staticcheck: true, ...settings } } }).catch(() => undefined)
     }
   }
 
@@ -1112,7 +1112,7 @@ export class GoplsClient {
       case 'workspace/configuration': {
         const params = message.params as { items?: Array<{ section?: string }> } | undefined
         result = params?.items?.map((item) => item.section === 'gopls'
-          ? { semanticTokens: true, ...(this.goplsSettings.localPrefix ? { localPrefix: this.goplsSettings.localPrefix } : {}) }
+          ? { semanticTokens: true, staticcheck: true, ...(this.goplsSettings.localPrefix ? { localPrefix: this.goplsSettings.localPrefix } : {}) }
           : null) ?? []
         break
       }

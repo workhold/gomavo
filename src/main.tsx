@@ -4,6 +4,8 @@ import * as monaco from 'monaco-editor/editor/editor.api'
 // editor actions used by the IDE and register only the file formats we display.
 import 'monaco-editor/editor/browser/coreCommands'
 import 'monaco-editor/editor/contrib/bracketMatching/browser/bracketMatching'
+// The code-action contribution provides the lightbulb and the ⌘. quick-fix menu.
+import 'monaco-editor/editor/contrib/codeAction/browser/codeActionContributions'
 import 'monaco-editor/editor/contrib/clipboard/browser/clipboard'
 import 'monaco-editor/editor/contrib/comment/browser/comment'
 import 'monaco-editor/editor/contrib/contextmenu/browser/contextmenu'

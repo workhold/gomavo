@@ -1619,6 +1619,13 @@ function App() {
       contextMenuOrder: 1,
       run: () => { runEditorContextRef.current?.() },
     })
+    // GoLand-style ⌥⏎ opens the quick-fix menu: macOS input methods swallow
+    // Monaco's built-in ⌘. while a CJK layout is active. editor.action.quickFix
+    // is an Action2 invisible to editor.getAction, so trigger the underlying
+    // EditorCommand directly.
+    editor.addCommand(monaco.KeyMod.Alt | monaco.KeyCode.Enter, () => {
+      void editor.trigger('mgland', 'editor.action.codeAction', { kind: 'quickfix' })
+    }, '!suggestWidgetVisible')
     editor.onDidChangeCursorPosition((event) => {
       setCursor({ line: event.position.lineNumber, column: event.position.column })
       updateGoContexts(event.position.lineNumber)

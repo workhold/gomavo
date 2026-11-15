@@ -33,6 +33,8 @@ export interface LspDiagnostic {
   source?: string
   message: string
   tags?: number[]
+  /** gopls bundles the lazy quick-fix payloads for an analyzer here. */
+  data?: unknown
 }
 
 export interface LspCompletionItem {
