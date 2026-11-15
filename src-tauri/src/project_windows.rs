@@ -9,7 +9,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Mutex, OnceLock};
 #[cfg(target_os = "macos")]
 use tauri::menu::PredefinedMenuItem;
-use tauri::menu::{Menu, MenuItem, MenuItemKind, Submenu};
+use tauri::menu::{Menu, MenuItem, Submenu};
 use tauri::{AppHandle, Emitter, EventTarget, Manager, State, WebviewWindow, WebviewWindowBuilder};
 
 const NEW_PROJECT_MENU_ID: &str = "project.new";
@@ -18,6 +18,26 @@ const OPEN_PROJECT_MENU_ID: &str = "project.open";
 #[cfg(target_os = "macos")]
 const QUIT_APP_MENU_ID: &str = "app.quit";
 const OPEN_SETTINGS_MENU_ID: &str = "app.settings";
+const RECENT_PROJECT_MENU_PREFIX: &str = "project.recent:";
+
+/// One entry of the File ▸ Recent Projects submenu, GoLand style ("name [branch]").
+#[derive(Clone, Debug, serde::Deserialize, serde::Serialize)]
+pub(crate) struct RecentProject {
+    pub(crate) name: String,
+    pub(crate) path: String,
+    pub(crate) branch: Option<String>,
+}
+
+static MENU_LOCALE: OnceLock<Mutex<String>> = OnceLock::new();
+static RECENT_PROJECTS: OnceLock<Mutex<Vec<RecentProject>>> = OnceLock::new();
+
+fn menu_locale() -> &'static Mutex<String> {
+    MENU_LOCALE.get_or_init(|| Mutex::new("en-US".to_string()))
+}
+
+fn recent_projects() -> &'static Mutex<Vec<RecentProject>> {
+    RECENT_PROJECTS.get_or_init(|| Mutex::new(Vec::new()))
+}
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -428,87 +448,13 @@ pub(crate) fn create_go_project(
     Ok(target.to_string_lossy().into_owned())
 }
 
-pub(crate) fn install_file_menu(app: &AppHandle) -> tauri::Result<()> {
-    let menu = Menu::default(app)?;
-    #[cfg(target_os = "macos")]
-    {
-        // The predefined Quit item invokes Cocoa's `terminate:` directly, which
-        // skips per-window CloseRequested handlers and their unsaved-file prompts.
-        let app_menu = menu
-            .items()?
-            .into_iter()
-            .next()
-            .and_then(|item| match item {
-                MenuItemKind::Submenu(submenu) => Some(submenu),
-                _ => None,
-            })
-            .ok_or_else(|| std::io::Error::other("default macOS app menu is missing"))?;
-        let settings = MenuItem::with_id(
-            app,
-            OPEN_SETTINGS_MENU_ID,
-            "Settings…",
-            true,
-            Some("Cmd+Comma"),
-        )?;
-        // Keep Settings in the application menu, between About and Services.
-        app_menu.insert(&settings, 2)?;
-        app_menu.insert(&PredefinedMenuItem::separator(app)?, 3)?;
-        let items = app_menu.items()?;
-        let quit_index = items
-            .len()
-            .checked_sub(1)
-            .ok_or_else(|| std::io::Error::other("default macOS Quit item is missing"))?;
-        match &items[quit_index] {
-            MenuItemKind::Predefined(item) if item.text()?.starts_with("Quit") => {}
-            _ => return Err(std::io::Error::other("default macOS Quit item changed").into()),
-        }
-        app_menu.remove_at(quit_index)?;
-        let quit = MenuItem::with_id(
-            app,
-            QUIT_APP_MENU_ID,
-            format!("Quit {}", app.package_info().name),
-            true,
-            Some("Cmd+Q"),
-        )?;
-        app_menu.insert(&quit, quit_index)?;
-    }
-    let new_window = MenuItem::with_id(
-        app,
-        NEW_WINDOW_MENU_ID,
-        "New Window",
-        true,
-        Some("CmdOrCtrl+N"),
-    )?;
-    let new_project = MenuItem::with_id(app, NEW_PROJECT_MENU_ID, "Project…", true, None::<&str>)?;
-    let new = Submenu::with_items(app, "New", true, &[&new_project])?;
-    let open_project = MenuItem::with_id(
-        app,
-        OPEN_PROJECT_MENU_ID,
-        "Open Project…",
-        true,
-        None::<&str>,
-    )?;
-    let existing_file = menu.items()?.into_iter().find_map(|item| match item {
-        MenuItemKind::Submenu(submenu) if submenu.text().ok().as_deref() == Some("File") => {
-            Some(submenu)
-        }
-        _ => None,
-    });
-    if let Some(file) = existing_file {
-        file.insert(&new_window, 0)?;
-        file.insert(&new, 1)?;
-        file.insert(&open_project, 2)?;
-    } else {
-        let file = Submenu::with_items(app, "File", true, &[&new_window, &new, &open_project])?;
-        #[cfg(target_os = "macos")]
-        let position = 1;
-        #[cfg(not(target_os = "macos"))]
-        let position = 0;
-        menu.insert(&file, position)?;
-    }
-    app.set_menu(menu)?;
+pub(crate) fn install_app_menu(app: &AppHandle) -> tauri::Result<()> {
+    rebuild_app_menu(app)?;
+    // Registered once: rebuilt menus reuse the same item ids, so a single
+    // handler keeps covering them after a locale or recents change.
     app.on_menu_event(|app, event| {
-        if event.id() == NEW_WINDOW_MENU_ID {
+        let id = event.id().clone().0;
+        if id == NEW_WINDOW_MENU_ID {
             let app = app.clone();
             std::thread::spawn(move || {
                 if let Err(error) = create_window(&app, StartupIntent::empty_window()) {
@@ -518,7 +464,7 @@ pub(crate) fn install_file_menu(app: &AppHandle) -> tauri::Result<()> {
             return;
         }
         #[cfg(target_os = "macos")]
-        if event.id() == QUIT_APP_MENU_ID {
+        if id == QUIT_APP_MENU_ID {
             // Closing windows from inside the menu action can run during
             // AppKit menu tracking, where the per-window close-requested flow
             // is skipped and unsaved-file prompts never appear. Deferring to a
@@ -536,20 +482,224 @@ pub(crate) fn install_file_menu(app: &AppHandle) -> tauri::Result<()> {
             });
             return;
         }
-        let event_name = if event.id() == NEW_PROJECT_MENU_ID {
-            Some("menu-new-project")
-        } else if event.id() == OPEN_PROJECT_MENU_ID {
-            Some("menu-open-project")
-        } else if event.id() == OPEN_SETTINGS_MENU_ID {
-            Some("menu-open-settings")
+        let payload = if let Some(path) = id.strip_prefix(RECENT_PROJECT_MENU_PREFIX) {
+            Some(MenuActionPayload { id: "recent-project".into(), path: Some(path.into()) })
         } else {
-            None
+            Some(MenuActionPayload { id, path: None })
         };
-        if let (Some(event_name), Some(label)) = (event_name, focused_window_label(app)) {
-            let _ = app.emit_to(EventTarget::webview_window(label), event_name, ());
+        if let (Some(payload), Some(label)) = (payload, focused_window_label(app)) {
+            let _ = app.emit_to(EventTarget::webview_window(label), "menu-action", payload);
         }
     });
     Ok(())
+}
+
+#[derive(Clone, serde::Serialize)]
+struct MenuActionPayload {
+    id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    path: Option<String>,
+}
+
+/// Rebuild the whole menu bar, GoLand style, with labels for the current
+/// locale and the stored recent-projects list. Accelerators are only set for
+/// keys the webview does not already own through the shortcut preferences.
+fn rebuild_app_menu(app: &AppHandle) -> tauri::Result<()> {
+    let locale = lock(menu_locale()).map_err(std::io::Error::other)?.clone();
+    let recents = lock(recent_projects()).map_err(std::io::Error::other)?.clone();
+    let zh = locale.starts_with("zh");
+    let t = move |zh_text: &'static str, en_text: &'static str| if zh { zh_text } else { en_text };
+    let app_name = app.package_info().name.to_string();
+
+    let menu = Menu::new(app)?;
+    #[cfg(target_os = "macos")]
+    {
+        let about = PredefinedMenuItem::about(app, Some(&app_name), None)?;
+        let settings = MenuItem::with_id(app, OPEN_SETTINGS_MENU_ID, t("设置…", "Settings…"), true, Some("Cmd+Comma"))?;
+        let hide = PredefinedMenuItem::hide(app, Some(&format!("{app_name}")))?;
+        let hide_others = PredefinedMenuItem::hide_others(app, None)?;
+        let show_all = PredefinedMenuItem::show_all(app, None)?;
+        let quit = MenuItem::with_id(app, QUIT_APP_MENU_ID, format!("{} {app_name}", t("退出", "Quit")), true, Some("Cmd+Q"))?;
+        let sep = || PredefinedMenuItem::separator(app);
+        // Custom quit instead of the predefined item: Cocoa's terminate:
+        // skips the per-window CloseRequested handlers and their unsaved-file
+        // prompts, while this item routes through the session-aware path.
+        let app_menu = Submenu::with_items(
+            app,
+            &app_name,
+            true,
+            &[&about, &settings, &sep()?, &sep()?, &hide, &hide_others, &show_all, &sep()?, &quit],
+        )?;
+        menu.insert(&app_menu, 0)?;
+    }
+
+    let new_window = MenuItem::with_id(app, NEW_WINDOW_MENU_ID, t("新窗口", "New Window"), true, Some("CmdOrCtrl+N"))?;
+    let new_go_file = MenuItem::with_id(app, "file.new-go-file", t("Go 文件", "Go File"), true, None::<&str>)?;
+    let new_project = MenuItem::with_id(app, NEW_PROJECT_MENU_ID, t("项目…", "Project…"), true, None::<&str>)?;
+    let new = Submenu::with_items(app, &t("新建", "New"), true, &[&new_go_file, &new_project])?;
+    let open_project = MenuItem::with_id(app, OPEN_PROJECT_MENU_ID, t("打开项目…", "Open Project…"), true, Some("CmdOrCtrl+O"))?;
+    let save = MenuItem::with_id(app, "file.save", t("保存", "Save"), true, None::<&str>)?;
+    let save_all = MenuItem::with_id(app, "file.save-all", t("保存全部", "Save All"), true, None::<&str>)?;
+    // Recent Projects submenu, GoLand style: "name [branch]".
+    let recent_items: Vec<MenuItem<tauri::Wry>> = recents
+        .iter()
+        .map(|recent| {
+            let label = match &recent.branch {
+                Some(branch) if !branch.is_empty() => format!("{}  [{branch}]", recent.name),
+                _ => recent.name.clone(),
+            };
+            MenuItem::with_id(app, format!("{RECENT_PROJECT_MENU_PREFIX}{}", recent.path), label, true, None::<&str>)
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    let mut recent_refs: Vec<&dyn tauri::menu::IsMenuItem<tauri::Wry>> = recent_items.iter().map(|item| item as &dyn tauri::menu::IsMenuItem<tauri::Wry>).collect();
+    let no_recents = MenuItem::with_id(app, "project.recent-empty", t("暂无最近项目", "No recent projects"), false, None::<&str>)?;
+    if recent_refs.is_empty() {
+        recent_refs.push(&no_recents);
+    }
+    let recents_submenu = Submenu::with_items(app, &t("最近的项目", "Recent Projects"), true, &recent_refs)?;
+    #[cfg(target_os = "macos")]
+    let file = {
+        let close_window = PredefinedMenuItem::close_window(app, Some(&t("关闭窗口", "Close Window")))?;
+        Submenu::with_items(
+            app,
+            &t("文件", "File"),
+            true,
+            &[&new_window, &new, &open_project, &recents_submenu, &PredefinedMenuItem::separator(app)?, &save, &save_all, &close_window],
+        )?
+    };
+    #[cfg(not(target_os = "macos"))]
+    let file = Submenu::with_items(
+        app,
+        &t("文件", "File"),
+        true,
+        &[&new_window, &new, &open_project, &recents_submenu, &PredefinedMenuItem::separator(app)?, &save, &save_all],
+    )?;
+    let file_position = if cfg!(target_os = "macos") { 1 } else { 0 };
+    menu.insert(&file, file_position)?;
+
+    let edit = Submenu::with_items(
+        app,
+        &t("编辑", "Edit"),
+        true,
+        &[
+            &PredefinedMenuItem::undo(app, None)?,
+            &PredefinedMenuItem::redo(app, None)?,
+            &PredefinedMenuItem::separator(app)?,
+            &PredefinedMenuItem::cut(app, None)?,
+            &PredefinedMenuItem::copy(app, None)?,
+            &PredefinedMenuItem::paste(app, None)?,
+            &PredefinedMenuItem::select_all(app, None)?,
+        ],
+    )?;
+    menu.insert(&edit, 2)?;
+
+    let toggle_project = MenuItem::with_id(app, "view.toggle-project", t("Project 项目", "Project"), true, None::<&str>)?;
+    let toggle_git = MenuItem::with_id(app, "view.toggle-git", t("Git", "Git"), true, None::<&str>)?;
+    let toggle_terminal = MenuItem::with_id(app, "view.toggle-terminal", t("终端 Terminal", "Terminal"), true, None::<&str>)?;
+    let toggle_run = MenuItem::with_id(app, "view.toggle-run", t("运行 Run", "Run"), true, None::<&str>)?;
+    let toggle_problems = MenuItem::with_id(app, "view.toggle-problems", t("问题 Problems", "Problems"), true, None::<&str>)?;
+    let toggle_debug = MenuItem::with_id(app, "view.toggle-debug", t("调试 Debug", "Debug"), true, None::<&str>)?;
+    let toggle_search = MenuItem::with_id(app, "view.toggle-search", t("搜索 Search", "Search"), true, None::<&str>)?;
+    let tool_windows = Submenu::with_items(
+        app,
+        &t("工具窗口", "Tool Windows"),
+        true,
+        &[&toggle_project, &toggle_git, &toggle_terminal, &toggle_run, &toggle_problems, &toggle_debug, &toggle_search],
+    )?;
+    let view = Submenu::with_items(app, &t("视图", "View"), true, &[&tool_windows])?;
+    menu.insert(&view, 3)?;
+
+    let search_everywhere = MenuItem::with_id(app, "nav.search-everywhere", t("搜索所有内容", "Search Everywhere"), true, None::<&str>)?;
+    let recent_files = MenuItem::with_id(app, "nav.recent-files", t("最近文件", "Recent Files"), true, None::<&str>)?;
+    let goto_definition = MenuItem::with_id(app, "nav.go-to-definition", t("跳转定义", "Go to Definition"), true, None::<&str>)?;
+    let nav_back = MenuItem::with_id(app, "nav.back", t("后退", "Back"), true, None::<&str>)?;
+    let nav_forward = MenuItem::with_id(app, "nav.forward", t("前进", "Forward"), true, None::<&str>)?;
+    let navigate = Submenu::with_items(
+        app,
+        &t("导航", "Navigate"),
+        true,
+        &[&search_everywhere, &recent_files, &PredefinedMenuItem::separator(app)?, &goto_definition, &PredefinedMenuItem::separator(app)?, &nav_back, &nav_forward],
+    )?;
+    menu.insert(&navigate, 4)?;
+
+    let organize_imports = MenuItem::with_id(app, "code.organize-imports", t("整理 Imports", "Optimize Imports"), true, Some("Ctrl+Alt+O"))?;
+    let reformat = MenuItem::with_id(app, "code.format", t("重新格式化代码", "Reformat Code"), true, None::<&str>)?;
+    let quick_fix = MenuItem::with_id(app, "code.quick-fix", t("快速修复", "Quick Fix"), true, None::<&str>)?;
+    let code = Submenu::with_items(
+        app,
+        &t("代码", "Code"),
+        true,
+        &[&organize_imports, &reformat, &quick_fix],
+    )?;
+    menu.insert(&code, 5)?;
+
+    let rename = MenuItem::with_id(app, "refactor.rename", t("重命名", "Rename"), true, Some("Shift+F6"))?;
+    let refactor = Submenu::with_items(app, &t("重构", "Refactor"), true, &[&rename])?;
+    menu.insert(&refactor, 6)?;
+
+    let run = MenuItem::with_id(app, "run.run", t("运行", "Run"), true, None::<&str>)?;
+    let debug = MenuItem::with_id(app, "run.debug", t("调试", "Debug"), true, None::<&str>)?;
+    let coverage = MenuItem::with_id(app, "run.coverage", t("覆盖率运行", "Run with Coverage"), true, None::<&str>)?;
+    let build = MenuItem::with_id(app, "run.build", t("构建项目", "Build Project"), true, None::<&str>)?;
+    let stop = MenuItem::with_id(app, "run.stop", t("停止", "Stop"), true, None::<&str>)?;
+    let run_configs = MenuItem::with_id(app, "run.configs", t("运行配置…", "Run Configurations…"), true, None::<&str>)?;
+    let run_menu = Submenu::with_items(
+        app,
+        &t("运行", "Run"),
+        true,
+        &[&run, &debug, &PredefinedMenuItem::separator(app)?, &coverage, &build, &stop, &PredefinedMenuItem::separator(app)?, &run_configs],
+    )?;
+    menu.insert(&run_menu, 7)?;
+
+    let go_mod_tidy = MenuItem::with_id(app, "tools.go-mod-tidy", t("Go Mod Tidy", "Go Mod Tidy"), true, None::<&str>)?;
+    let restart_gopls = MenuItem::with_id(app, "tools.restart-gopls", t("重启 gopls", "Restart gopls"), true, None::<&str>)?;
+    let tools = Submenu::with_items(app, &t("工具", "Tools"), true, &[&go_mod_tidy, &restart_gopls])?;
+    menu.insert(&tools, 8)?;
+
+    let git_window = MenuItem::with_id(app, "vcs.tool-window", t("Git 工具窗口", "Git Tool Window"), true, None::<&str>)?;
+    let vcs_commit = MenuItem::with_id(app, "vcs.commit", t("提交…", "Commit…"), true, None::<&str>)?;
+    let vcs_update = MenuItem::with_id(app, "vcs.update", t("更新项目", "Update Project"), true, Some("CmdOrCtrl+T"))?;
+    let vcs_fetch = MenuItem::with_id(app, "vcs.fetch", t("拉取 Fetch", "Fetch"), true, None::<&str>)?;
+    let vcs_push = MenuItem::with_id(app, "vcs.push", t("推送 Push", "Push All"), true, None::<&str>)?;
+    let vcs = Submenu::with_items(
+        app,
+        "VCS",
+        true,
+        &[&git_window, &vcs_commit, &PredefinedMenuItem::separator(app)?, &vcs_update, &vcs_fetch, &vcs_push],
+    )?;
+    menu.insert(&vcs, 9)?;
+
+    #[cfg(target_os = "macos")]
+    {
+        let minimize = PredefinedMenuItem::minimize(app, None)?;
+        let maximize = PredefinedMenuItem::maximize(app, None)?;
+        let window = Submenu::with_items(app, &t("窗口", "Window"), true, &[&minimize, &maximize])?;
+        menu.insert(&window, 10)?;
+    }
+
+    let help_shortcuts = MenuItem::with_id(app, "help.shortcuts", t("快捷键", "Keyboard Shortcuts"), true, None::<&str>)?;
+    let help = Submenu::with_items(app, &t("帮助", "Help"), true, &[&help_shortcuts])?;
+    // GoLand puts 帮助/Help last, after 窗口/Window.
+    menu.append(&help)?;
+
+    app.set_menu(menu)?;
+    Ok(())
+}
+
+#[tauri::command]
+pub(crate) fn set_menu_locale(app: AppHandle, locale: String) -> BackendResult<()> {
+    if let Ok(mut current) = lock(menu_locale()) {
+        *current = locale;
+    }
+    rebuild_app_menu(&app).map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+pub(crate) fn set_recent_projects(app: AppHandle, projects: Vec<RecentProject>) -> BackendResult<()> {
+    if let Ok(mut current) = lock(recent_projects()) {
+        *current = projects;
+    }
+    rebuild_app_menu(&app).map_err(|error| error.to_string())
 }
 
 #[cfg(test)]

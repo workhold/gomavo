@@ -44,6 +44,12 @@ export interface EditorPreferences {
 
 export interface GoPreferences {
   formatOnSave: boolean
+  /** GoLand "Optimize imports on save": sort, group, and drop unused imports. */
+  organizeImportsOnSave: boolean
+  /** gopls staticcheck lint diagnostics. */
+  staticcheck: boolean
+  /** gopls gofumpt formatter: stricter code-style rules on top of gofmt. */
+  gofumpt: boolean
   inlayHints: boolean
   /** Comma-separated module prefixes goimports groups as "local" imports. */
   localPrefix: string
@@ -185,7 +191,7 @@ export const DEFAULT_PREFERENCES: Readonly<Preferences> = {
     showLineNumbers: true,
     showWhitespace: false,
   },
-  go: { formatOnSave: false, inlayHints: true, localPrefix: '' },
+  go: { formatOnSave: false, organizeImportsOnSave: true, staticcheck: true, gofumpt: false, inlayHints: true, localPrefix: '' },
   run: { saveBeforeRun: true, runConfigurations: [], selectedRunConfigurationId: null },
   appearance: { compactMode: false, theme: 'dark' },
   project: { showHiddenFiles: true, autoRevealCurrentFile: false },
@@ -196,6 +202,25 @@ export const DEFAULT_PREFERENCES: Readonly<Preferences> = {
 
 export const PREFERENCES_STORAGE_KEY = 'mgland.preferences.v1'
 export const PREFERENCES_CHANGED_EVENT = 'mgland:preferences-changed'
+const PROJECT_GO_STORAGE_KEY = 'mgland.project-go.v1'
+
+/** Per-project Go style overrides (.mgland project scope), falling back to the global defaults. */
+export function loadProjectGoOverrides(root: string | null): Partial<GoPreferences> {
+  if (!root) return {}
+  try {
+    const store = JSON.parse(localStorage.getItem(PROJECT_GO_STORAGE_KEY) ?? '{}') as Record<string, Partial<GoPreferences>>
+    return store[root] ?? {}
+  } catch { return {} }
+}
+
+export function saveProjectGoOverrides(root: string | null, overrides: Partial<GoPreferences>): void {
+  if (!root) return
+  let store: Record<string, Partial<GoPreferences>> = {}
+  try { store = JSON.parse(localStorage.getItem(PROJECT_GO_STORAGE_KEY) ?? '{}') as Record<string, Partial<GoPreferences>> } catch { store = {} }
+  if (Object.keys(overrides).length) store[root] = overrides
+  else delete store[root]
+  localStorage.setItem(PROJECT_GO_STORAGE_KEY, JSON.stringify(store))
+}
 
 const ACTION_IDS = SHORTCUT_ACTIONS.map((action) => action.id)
 const KEY_NAMES = new Set([
@@ -281,6 +306,9 @@ export function normalizePreferences(value: unknown): Preferences {
   }
   if (saved.go && typeof saved.go === 'object') {
     if (typeof saved.go.formatOnSave === 'boolean') defaults.go.formatOnSave = saved.go.formatOnSave
+    if (typeof saved.go.organizeImportsOnSave === 'boolean') defaults.go.organizeImportsOnSave = saved.go.organizeImportsOnSave
+    if (typeof saved.go.staticcheck === 'boolean') defaults.go.staticcheck = saved.go.staticcheck
+    if (typeof saved.go.gofumpt === 'boolean') defaults.go.gofumpt = saved.go.gofumpt
     if (typeof saved.go.inlayHints === 'boolean') defaults.go.inlayHints = saved.go.inlayHints
     if (typeof saved.go.localPrefix === 'string') defaults.go.localPrefix = saved.go.localPrefix.slice(0, 500)
   }

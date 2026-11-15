@@ -4,6 +4,9 @@ const STORAGE_KEY = 'mgland.locale'
 const DEFAULT_LOCALE: Locale = 'zh-CN'
 
 const dictionary = {
+  '正在获取依赖 {target}…': { 'zh-CN': '正在获取依赖 {target}…', 'en-US': 'Fetching dependency {target}…' },
+  'go get {target}': { 'zh-CN': 'go get {target}', 'en-US': 'go get {target}' },
+  '依赖已写入 go.mod：{target}。': { 'zh-CN': '依赖已写入 go.mod：{target}。', 'en-US': 'Dependency added to go.mod: {target}.' },
   '{count} 未保存': { 'zh-CN': '{count} 未保存', 'en-US': '{count} unsaved' },
   '{count} failed': { 'zh-CN': '{count} 个失败', 'en-US': '{count} failed' },
   '{count} passed': { 'zh-CN': '{count} 个通过', 'en-US': '{count} passed' },
@@ -263,6 +266,12 @@ const dictionary = {
   '空闲': { 'zh-CN': '空闲', 'en-US': 'Idle' },
   '保存时格式化 Go 代码': { 'zh-CN': '保存时格式化 Go 代码', 'en-US': 'Format Go code on save' },
   '保存前交给 gopls gofmt，并套用 EditorConfig 规则': { 'zh-CN': '保存前交给 gopls gofmt，并套用 EditorConfig 规则', 'en-US': 'Run gopls gofmt before saving and apply EditorConfig rules' },
+  '保存时整理 imports': { 'zh-CN': '保存时整理 imports', 'en-US': 'Organize imports on save' },
+  '对应 GoLand 的 Optimize imports：排序、按分组排列并删除未使用的导入': { 'zh-CN': '对应 GoLand 的 Optimize imports：排序、按分组排列并删除未使用的导入', 'en-US': 'Like GoLand Optimize imports: sort, group, and drop unused imports' },
+  'staticcheck 代码检查': { 'zh-CN': 'staticcheck 代码检查', 'en-US': 'staticcheck lint checks' },
+  'gopls 的 staticcheck 诊断与快速修复（对应 GoLand 的 inspection）': { 'zh-CN': 'gopls 的 staticcheck 诊断与快速修复（对应 GoLand 的 inspection）', 'en-US': 'gopls staticcheck diagnostics and quick fixes (mirrors GoLand inspections)' },
+  'gofumpt 严格代码风格': { 'zh-CN': 'gofumpt 严格代码风格', 'en-US': 'gofumpt strict code style' },
+  '在 gofmt 基础上套用更严格的风格规则（保存格式化时生效）': { 'zh-CN': '在 gofmt 基础上套用更严格的风格规则（保存格式化时生效）', 'en-US': 'Stricter style rules on top of gofmt (applied when formatting on save)' },
   '运行与测试行为，运行配置在顶栏的配置菜单中编辑': { 'zh-CN': '运行与测试行为，运行配置在顶栏的配置菜单中编辑', 'en-US': 'Run and test behavior; edit run configurations from the toolbar menu' },
   '运行前保存所有文件': { 'zh-CN': '运行前保存所有文件', 'en-US': 'Save all files before running' },
   '启动 go run / go test 前自动保存未保存的修改': { 'zh-CN': '启动 go run / go test 前自动保存未保存的修改', 'en-US': 'Automatically save unsaved changes before go run / go test' },

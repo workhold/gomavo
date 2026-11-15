@@ -42,7 +42,7 @@ pub fn run() {
             _ => {}
         })
         .setup(|app| {
-            project_windows::install_file_menu(app.handle())?;
+            project_windows::install_app_menu(app.handle())?;
             #[cfg(target_os = "macos")]
             project_windows::install_dock_menu(app.handle());
             session::restore(app.handle());
@@ -54,6 +54,8 @@ pub fn run() {
             project_windows::open_new_project_window,
             project_windows::open_empty_project_window,
             project_windows::create_go_project,
+            project_windows::set_menu_locale,
+            project_windows::set_recent_projects,
             session::quit_cancelled,
             files::open_workspace,
             files::list_directory,

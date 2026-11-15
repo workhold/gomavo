@@ -1259,3 +1259,8 @@ html.theme-light .create-dialog { background: #ffffff; border-color: var(--surfa
 html.theme-light .create-dialog input, html.theme-light .create-dialog textarea { background: #ffffff; border-color: var(--surface-border); color: var(--text-primary); }
 html.theme-light .palette { background: #ffffff; border-color: var(--surface-border); }
 html.theme-light .palette-list button.selected, html.theme-light .palette-list button:hover { background: #e3ebfe; }
+
+/* Hide the quick-fix lightbulb icon (both the in-editor widget and the gutter
+   decoration). The code-action menu itself stays enabled — ⌥⏎ / ⌘. opens it. */
+.monaco-editor .lightBulbWidget,
+.monaco-editor .glyph-margin-widgets .cgmr[class*='codicon-gutter-lightbulb'] { display: none !important; }

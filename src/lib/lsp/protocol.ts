@@ -125,6 +125,14 @@ export interface LspWorkspaceEdit {
   }>
 }
 
+/** One entry of Monaco's onDidChangeModelContent event, in Monaco (one-based) coordinates. */
+export interface MonacoContentChange {
+  range: { startLineNumber: number; startColumn: number; endLineNumber: number; endColumn: number }
+  rangeOffset: number
+  rangeLength: number
+  text: string
+}
+
 export interface LspCodeAction {
   title: string
   kind?: string

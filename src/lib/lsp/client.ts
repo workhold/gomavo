@@ -22,6 +22,7 @@ import type {
   LspSymbolInformation,
   LspTextEdit,
   LspWorkspaceEdit,
+  MonacoContentChange,
   OpenDocument,
   PendingRequest,
   RpcMessage,
@@ -136,6 +137,7 @@ export class GoplsClient {
   private readonly onFailure?: (message: string) => void
   private readonly onOpenDefinition?: OpenDefinitionCallback
   private readonly onWorkspaceEdit?: WorkspaceEditCallback
+  private readonly onMissingModule?: (module: string) => void
   private readonly documents = new Map<string, OpenDocument>()
   private readonly diagnostics = new Map<string, LspDiagnostic[]>()
   private readonly semanticListeners = new Set<() => void>()
@@ -151,8 +153,11 @@ export class GoplsClient {
   private sendQueue: Promise<unknown> = Promise.resolve()
   private syncKind = 1
   private semanticLegend?: Monaco.languages.SemanticTokensLegend
+  /** Last marker signature applied per URI: republished identical diagnostics skip setModelMarkers. */
+  private lastMarkers = new Map<string, string>()
   private serverCommandId?: string
-  private goplsSettings: { localPrefix?: string } = {}
+  private goGetCommandId?: string
+  private goplsSettings: { staticcheck?: boolean; gofumpt?: boolean; localPrefix?: string[] } = {}
 
   constructor(
     root: string,
@@ -161,6 +166,7 @@ export class GoplsClient {
     onFailure?: (message: string) => void,
     onOpenDefinition?: OpenDefinitionCallback,
     onWorkspaceEdit?: WorkspaceEditCallback,
+    onMissingModule?: (module: string) => void,
   ) {
     this.root = normalizePath(root)
     this.monaco = monaco
@@ -168,6 +174,7 @@ export class GoplsClient {
     this.onFailure = onFailure
     this.onOpenDefinition = onOpenDefinition
     this.onWorkspaceEdit = onWorkspaceEdit
+    this.onMissingModule = onMissingModule
   }
 
   async start(): Promise<void> {
@@ -207,7 +214,7 @@ export class GoplsClient {
         clientInfo: { name: 'mgland', version: '0.1.0' },
         rootUri: fileUri(this.root),
         workspaceFolders: [{ uri: fileUri(this.root), name: this.root.split('/').pop() || this.root }],
-        initializationOptions: { semanticTokens: true, staticcheck: true },
+        initializationOptions: this.goplsSettingsPayload(),
         capabilities: {
           workspace: { workspaceFolders: true, configuration: true },
           textDocument: {
@@ -361,6 +368,55 @@ export class GoplsClient {
     })
   }
 
+  /**
+   * Push keystroke-sized content changes instead of resending the whole file:
+   * on a 10k-line document a full-text didChange per keystroke serializes and
+   * ships hundreds of kilobytes over the gopls pipe, which shows up as typing
+   * lag. Ranges refer to the pre-change document, so applying (and sending)
+   * them back-to-front keeps every range valid.
+   */
+  async changeDocumentIncremental(path: string, changes: readonly MonacoContentChange[]): Promise<void> {
+    await this.start()
+    const uri = fileUri(path)
+    const document = this.documents.get(uri)
+    if (!document || !changes.length) return
+    const original = document.text
+    const lineStart = (line: number): number => {
+      let offset = 0
+      for (let remaining = line; remaining > 0; remaining -= 1) {
+        const next = original.indexOf('\n', offset)
+        if (next === -1) return original.length
+        offset = next + 1
+      }
+      return offset
+    }
+    const items = changes.map((change) => ({
+      change,
+      start: lineStart(change.range.startLineNumber - 1) + change.range.startColumn - 1,
+      end: lineStart(change.range.endLineNumber - 1) + change.range.endColumn - 1,
+    })).sort((a, b) => b.start - a.start)
+    let text = original
+    for (const item of items) text = text.slice(0, item.start) + item.change.text + text.slice(item.end)
+    if (text === original) return
+    if (this.syncKind !== 2) {
+      await this.changeDocument(path, text)
+      return
+    }
+    const contentChanges = items.map(({ change }) => ({
+      range: {
+        start: { line: change.range.startLineNumber - 1, character: change.range.startColumn - 1 },
+        end: { line: change.range.endLineNumber - 1, character: change.range.endColumn - 1 },
+      },
+      text: change.text,
+    }))
+    document.text = text
+    document.version += 1
+    await this.notify('textDocument/didChange', {
+      textDocument: { uri, version: document.version },
+      contentChanges,
+    })
+  }
+
   async saveDocument(path: string, savedText?: string): Promise<void> {
     await this.start()
     const uri = fileUri(path)
@@ -387,10 +443,39 @@ export class GoplsClient {
     return applyTextEdits(text, edits ?? [])
   }
 
+  /**
+   * GoLand "Optimize imports": sort and group imports, drop unused ones.
+   * Returns the rewritten file, or null when the server had nothing to apply.
+   */
+  async organizeImports(path: string, text: string): Promise<string | null> {
+    await this.start()
+    await this.changeDocument(path, text)
+    const uri = fileUri(path)
+    if (this.stopped) return null
+    const actions = await this.request<LspCodeAction[] | null>('textDocument/codeAction', {
+      textDocument: { uri },
+      range: { start: { line: 0, character: 0 }, end: endPosition(text) },
+      context: { diagnostics: [], only: ['source.organizeImports'] },
+    }, 15000)
+    if (this.stopped) return null
+    let edits: LspTextEdit[] = []
+    for (const action of actions ?? []) {
+      if (action.kind !== 'source.organizeImports') continue
+      const changes = action.edit?.changes?.[uri]
+      if (changes) edits = edits.concat(changes)
+      for (const change of action.edit?.documentChanges ?? []) {
+        if (change.textDocument?.uri === uri && change.edits) edits = edits.concat(change.edits)
+      }
+    }
+    if (!edits.length) return null
+    return applyTextEdits(text, edits)
+  }
+
   async closeDocument(path: string): Promise<void> {
     const uri = fileUri(path)
     if (!this.documents.delete(uri)) return
     this.diagnostics.delete(uri)
+    this.lastMarkers.delete(uri)
     this.emitDiagnostics()
     const model = this.monaco.editor.getModel(this.monaco.Uri.parse(uri))
     if (model) this.monaco.editor.setModelMarkers(model, 'gopls', [])
@@ -669,6 +754,24 @@ export class GoplsClient {
               })
             }
           }
+          // gopls publishes no quick fix for BrokenImport while the module is
+          // absent from go.mod; synthesize the GoLand-style "go get" action.
+          const missingModules = new Set<string>()
+          for (const diagnostic of diagnostics) {
+            const message = diagnostic.message ?? ''
+            const target = message.match(/to add it: go get (\S+)/)?.[1]
+              ?? message.match(/: go get (\S+)$/)?.[1]
+              ?? message.match(/no required module provides package "?([^\s":]+)"?/)?.[1]
+            if (target) missingModules.add(target)
+          }
+          for (const target of missingModules) {
+            mapped.push({
+              title: `go get ${target}`,
+              kind: 'quickfix',
+              isPreferred: true,
+              command: { id: this.ensureGoGetCommand(), title: `go get ${target}`, arguments: [target] },
+            })
+          }
           return { actions: mapped, dispose: () => undefined }
         } catch {
           return null
@@ -880,6 +983,17 @@ export class GoplsClient {
     return id
   }
 
+  /** Editor command backing the synthesized "go get" quick fix for BrokenImport. */
+  private ensureGoGetCommand(): string {
+    if (this.goGetCommandId) return this.goGetCommandId
+    const id = `mgland.go.get.${this.nextId}`
+    this.goGetCommandId = id
+    this.disposables.push(this.monaco.editor.registerCommand(id, (_accessor, module: unknown) => {
+      if (typeof module === 'string' && module) this.onMissingModule?.(module)
+    }))
+    return id
+  }
+
   private symbolKind(kind: number): Monaco.languages.SymbolKind {
     const K = this.monaco.languages.SymbolKind
     const kinds = [
@@ -904,10 +1018,35 @@ export class GoplsClient {
   }
 
   /** Update gopls settings and push them to a running server. */
-  setConfig(settings: { localPrefix?: string }): void {
-    this.goplsSettings = settings
+  setConfig(settings: { staticcheck?: boolean; gofumpt?: boolean; localPrefix?: string }): void {
+    // gopls expects localPrefix as a string array; the preference holds a
+    // comma/space separated string like GoLand's grouping input.
+    const prefixes = (settings.localPrefix ?? '').split(/[,\s]+/).filter(Boolean)
+    this.goplsSettings = {
+      staticcheck: settings.staticcheck,
+      gofumpt: settings.gofumpt,
+      ...(prefixes.length ? { localPrefix: prefixes } : {}),
+    }
     if (this.ready) {
-      void this.notify('workspace/didChangeConfiguration', { settings: { gopls: { staticcheck: true, ...settings } } }).catch(() => undefined)
+      void this.notify('workspace/didChangeConfiguration', { settings: { gopls: this.goplsSettingsPayload() } }).catch(() => undefined)
+    }
+  }
+
+  /** Tell gopls that go.mod / go.sum / .go files changed outside the editor, so a terminal `go get` clears stale BrokenImport markers. */
+  async changedWatchedFiles(paths: string[]): Promise<void> {
+    if (!this.ready || !paths.length) return
+    await this.notify('workspace/didChangeWatchedFiles', {
+      changes: paths.map((path) => ({ uri: fileUri(normalizePath(path)), type: 2 })),
+    })
+  }
+
+  /** gopls settings with GoLand-aligned defaults: lint checks on, strict style off. */
+  private goplsSettingsPayload(): Record<string, unknown> {
+    return {
+      semanticTokens: true,
+      staticcheck: this.goplsSettings.staticcheck ?? true,
+      gofumpt: this.goplsSettings.gofumpt ?? false,
+      ...(this.goplsSettings.localPrefix ? { localPrefix: this.goplsSettings.localPrefix } : {}),
     }
   }
 
@@ -1041,6 +1180,12 @@ export class GoplsClient {
           : this.monaco.MarkerTag.Deprecated),
       }
     })
+    // gopls republishes the full diagnostics list after every didChange; on a
+    // large file that would rebuild all squiggle decorations per keystroke even
+    // when nothing changed for this document.
+    const signature = JSON.stringify(markers)
+    if (this.lastMarkers.get(uri) === signature) return
+    this.lastMarkers.set(uri, signature)
     this.monaco.editor.setModelMarkers(model, 'gopls', markers)
   }
 
@@ -1111,9 +1256,7 @@ export class GoplsClient {
     switch (message.method) {
       case 'workspace/configuration': {
         const params = message.params as { items?: Array<{ section?: string }> } | undefined
-        result = params?.items?.map((item) => item.section === 'gopls'
-          ? { semanticTokens: true, staticcheck: true, ...(this.goplsSettings.localPrefix ? { localPrefix: this.goplsSettings.localPrefix } : {}) }
-          : null) ?? []
+        result = params?.items?.map((item) => item.section === 'gopls' ? this.goplsSettingsPayload() : null) ?? []
         break
       }
       case 'workspace/workspaceFolders':

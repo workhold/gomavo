@@ -30,10 +30,19 @@ export interface SettingsPaneProps {
   /** Runs a go task such as install_dlv / install_govulncheck for the Go tools page. */
   onInstallTool?: (task: string) => void | Promise<void>
   pluginManager?: Omit<PluginsPaneProps, 'onClose' | 'embedded' | 'locale'>
+  /** Where style-family Go settings are written: the global scheme or the project scheme. */
+  goScope?: 'global' | 'project'
+  onGoScopeChange?: (scope: 'global' | 'project') => void
+  hasProject?: boolean
+  /** How many Go settings the project scheme overrides; 0 = inheriting global. */
+  projectOverrideCount?: number
+  onClearProjectGoOverrides?: () => void
+  onOpenStyleFile?: () => void
 }
 
-export type SettingsSection = 'go' | 'editor' | 'project' | 'appearance' | 'language' | 'shortcuts' | 'editorGeneral' | 'editorFont' | 'editorCodeStyle' | 'plugins' | 'versionControl' | 'run' | 'terminal'
+export type SettingsSection = 'go' | 'editor' | 'editorCodeStyle' | 'project' | 'appearance' | 'language' | 'shortcuts' | 'editorGeneral' | 'editorFont' | 'plugins' | 'versionControl' | 'run' | 'terminal'
 type Section = SettingsSection
+type StyleTab = 'indent' | 'imports' | 'other'
 type Conflict = { action: ShortcutAction; shortcut: Shortcut; previous: ShortcutAction[] }
 
 type NavPage = { id: Section; label: string; keywords: string }
@@ -140,6 +149,19 @@ const ENGLISH: Record<string, string> = {
   '编译项目': 'Build Project', '编译项目中的 Go 包': 'Build Go packages in the project',
   '停止任务': 'Stop Task', '停止当前运行或测试任务': 'Stop the current run or test task',
   '整理 Go 模块': 'Tidy Go Modules', '执行 go mod tidy': 'Run go mod tidy',
+  '格式化、import 整理与代码风格在「代码样式 · Go」中按方案设置': 'Formatting, import optimizing, and code style live in Code Style · Go, organized by scheme',
+  '对齐 GoLand：缩进、导入分组与保存动作，支持全局或当前项目两种方案': 'GoLand-aligned: indentation, import grouping, and save actions, as a global or per-project scheme',
+  '方案': 'Scheme', '风格设置对所有项目生效，或仅作用于当前项目；新增的风格设置同样按方案区分': 'Style settings apply to all projects or to the current project only. New style settings follow the scheme.',
+  '全局（所有项目）': 'Global (all projects)', '仅当前项目': 'Current project only',
+  '当前项目覆盖': 'Project overrides', '{count} 项设置在当前项目使用独立值': '{count} settings use project-specific values', '还原全局默认': 'Restore global defaults',
+  '项目根目录的 .editorconfig 覆盖缩进、换行符与空白规则（GoLand 的 EditorConfig 方案）': 'A project-root .editorconfig overrides indentation, line endings, and whitespace rules (GoLand-style EditorConfig scheme)',
+  '打开或创建 .editorconfig': 'Open or create .editorconfig',
+  '制表符和缩进': 'Tabs and Indents', '导入': 'Imports', '其他': 'Other',
+  '保存时整理 imports': 'Optimize imports on save', '对应 GoLand 的 Optimize imports：排序、按分组排列并删除未使用的导入': 'Matches GoLand’s Optimize Imports: sort, group, and drop unused imports',
+  '本地导入分组前缀': 'Local import prefix', '逗号分隔的模块路径，goimports 按其分组本地导入': 'Comma-separated module paths that goimports groups as local imports',
+  'gofumpt 严格代码风格': 'gofumpt strict code style', '在 gofmt 基础上套用更严格的风格规则（保存格式化时生效）': 'Stricter style rules on top of gofmt (applied when formatting on save)',
+  'staticcheck 代码检查': 'staticcheck inspections', 'gopls 的 staticcheck 诊断与快速修复（对应 GoLand 的 inspection）': 'gopls staticcheck diagnostics and quick fixes (GoLand-style inspections)',
+  'Inlay Hints 内联提示': 'Inlay hints', 'gopls 显示参数名、推断类型和常量值': 'gopls shows parameter names, inferred types, and constant values',
 }
 
 function localize(locale: Locale | undefined, text: string): string {
@@ -169,8 +191,9 @@ function NumberSetting({ id, label, description, value, min, max, unit, onChange
   </div>
 }
 
-export function SettingsPane({ preferences, onChange, onClose, initialSection, locale, onLocaleChange, versions, lspState, onInstallGopls, onRestartGopls, goToolBusy, onInstallTool, pluginManager }: SettingsPaneProps) {
+export function SettingsPane({ preferences, onChange, onClose, initialSection, locale, onLocaleChange, versions, lspState, onInstallGopls, onRestartGopls, goToolBusy, onInstallTool, pluginManager, goScope, onGoScopeChange, hasProject, projectOverrideCount, onClearProjectGoOverrides, onOpenStyleFile }: SettingsPaneProps) {
   const [section, setSection] = useState<Section>(initialSection ?? 'editor')
+  const [styleTab, setStyleTab] = useState<StyleTab>('indent')
   const [recording, setRecording] = useState<ShortcutAction | null>(null)
   const [conflict, setConflict] = useState<Conflict | null>(null)
   const [shiftArmed, setShiftArmed] = useState(false)
@@ -293,7 +316,7 @@ export function SettingsPane({ preferences, onChange, onClose, initialSection, l
       <div className="mg-settings-body">
         <nav className="mg-settings-nav" aria-label={t('设置分类')}>
           {([
-            ['go', 'Go 工具链'], ['appearance', '外观'], ['editor', '编辑器'], ['project', '项目'],
+            ['go', 'Go 工具链'], ['appearance', '外观'], ['editor', '编辑器'], ['editorCodeStyle', '代码样式'], ['project', '项目'],
             ['versionControl', '版本控制'], ['run', '运行'], ['terminal', '终端'], ['shortcuts', '快捷键'],
             ['plugins', '插件'],
             ...(locale && onLocaleChange ? [['language', '语言']] : []),
@@ -315,18 +338,7 @@ export function SettingsPane({ preferences, onChange, onClose, initialSection, l
             <div className="mg-settings-field">
               <div><strong>{t('gopls 状态')}</strong><span>{lspState === 'ready' ? t('已就绪') : lspState === 'starting' ? t('gopls 启动中') : lspState === 'missing' ? t('gopls 未安装') : lspState === 'error' ? t('gopls 错误') : t('空闲')}</span></div>
             </div>
-            <label className="mg-settings-field mg-settings-check-field">
-              <div><strong>{t('保存时格式化 Go 代码')}</strong><span>{t('保存前交给 gopls gofmt，并套用 EditorConfig 规则')}</span></div>
-              <input type="checkbox" checked={preferences.go.formatOnSave} onChange={(event) => onChange({ ...preferences, go: { ...preferences.go, formatOnSave: event.target.checked } })} />
-            </label>
-            <label className="mg-settings-field mg-settings-check-field">
-              <div><strong>{t('Inlay Hints 内联提示')}</strong><span>{t('gopls 显示参数名、推断类型和常量值')}</span></div>
-              <input type="checkbox" checked={preferences.go.inlayHints} onChange={(event) => onChange({ ...preferences, go: { ...preferences.go, inlayHints: event.target.checked } })} />
-            </label>
-            <div className="mg-settings-field">
-              <div><label htmlFor="mg-setting-local-prefix">{t('本地导入分组前缀')}</label><span>{t('逗号分隔的模块路径，goimports 按其分组本地导入（对应 GoLand 的 import 分组设置）')}</span></div>
-              <input id="mg-setting-local-prefix" className="mg-settings-input" value={preferences.go.localPrefix} placeholder="my-company/internal" onChange={(event) => onChange({ ...preferences, go: { ...preferences.go, localPrefix: event.target.value } })} />
-            </div>
+            <p className="mg-settings-shortcut-hint">{t('格式化、import 整理与代码风格在「代码样式 · Go」中按方案设置')}</p>
           </>}
           {section === 'appearance' && <>
             <div className="mg-settings-section-heading"><h3>{t('外观')}</h3><p>{t('界面布局')}</p></div>
@@ -364,10 +376,55 @@ export function SettingsPane({ preferences, onChange, onClose, initialSection, l
               <div><strong>{t('Inlay Hints 内联提示')}</strong><span>{t('gopls 显示参数名、推断类型和常量值')}</span></div>
               <input type="checkbox" checked={preferences.go.inlayHints} onChange={(event) => onChange({ ...preferences, go: { ...preferences.go, inlayHints: event.target.checked } })} />
             </label>
+          </>}
+          {section === 'editorCodeStyle' && <>
+            <div className="mg-settings-section-heading"><h3>{t('代码样式')} · Go</h3><p>{t('对齐 GoLand：缩进、导入分组与保存动作，支持全局或当前项目两种方案')}</p></div>
             <div className="mg-settings-field">
-              <div><label htmlFor="mg-setting-local-prefix">{t('本地导入分组前缀')}</label><span>{t('逗号分隔的模块路径，goimports 按其分组本地导入（对应 GoLand 的 import 分组设置）')}</span></div>
-              <input id="mg-setting-local-prefix" className="mg-settings-input" value={preferences.go.localPrefix} placeholder="my-company/internal" onChange={(event) => onChange({ ...preferences, go: { ...preferences.go, localPrefix: event.target.value } })} />
+              <div><label htmlFor="mg-setting-go-scheme">{t('方案')}</label><span>{t('风格设置对所有项目生效，或仅作用于当前项目；新增的风格设置同样按方案区分')}</span></div>
+              <Dropdown ariaLabel={t('方案')} value={goScope ?? 'global'} options={[{ value: 'global', label: t('全局（所有项目）') }, ...(hasProject ? [{ value: 'project', label: t('仅当前项目') }] : [])]} onChange={(next) => onGoScopeChange?.(next === 'project' ? 'project' : 'global')} />
             </div>
+            {goScope === 'project' && (projectOverrideCount ?? 0) > 0 && <div className="mg-settings-field">
+              <div><strong>{t('当前项目覆盖')}</strong><span>{t('{count} 项设置在当前项目使用独立值', { count: projectOverrideCount ?? 0 })}</span></div>
+              <button type="button" className="mg-settings-action-button" onClick={() => onClearProjectGoOverrides?.()}>{t('还原全局默认')}</button>
+            </div>}
+            <div className="mg-settings-field">
+              <div><strong>{t('.editorconfig')}</strong><span>{t('项目根目录的 .editorconfig 覆盖缩进、换行符与空白规则（GoLand 的 EditorConfig 方案）')}</span></div>
+              <button type="button" className="mg-settings-action-button" onClick={() => onOpenStyleFile?.()}>{t('打开或创建 .editorconfig')}</button>
+            </div>
+            <div className="mg-settings-tabs" role="tablist" aria-label={t('代码样式')}>
+              {([['indent', '制表符和缩进'], ['imports', '导入'], ['other', '其他']] as [StyleTab, string][]).map(([id, label]) => <button key={id} type="button" role="tab" aria-selected={styleTab === id} className={styleTab === id ? 'active' : ''} onClick={() => setStyleTab(id)}>{t(label)}</button>)}
+            </div>
+            {styleTab === 'indent' && <>
+              <NumberSetting id="mg-setting-style-tab-size" label={t('Tab 宽度')} description={t('一个 Tab 对应的列数')} value={preferences.editor.tabSize} min={1} max={8} unit={t('列')} onChange={(value) => updateEditor('tabSize', value)} />
+              <label className="mg-settings-field mg-settings-check-field">
+                <div><strong>{t('按 Tab 时插入空格')}</strong><span>{t('关闭时插入 Tab 字符')}</span></div>
+                <input type="checkbox" checked={preferences.editor.insertSpaces} onChange={(event) => updateEditor('insertSpaces', event.target.checked)} />
+              </label>
+            </>}
+            {styleTab === 'imports' && <>
+              <label className="mg-settings-field mg-settings-check-field">
+                <div><strong>{t('保存时整理 imports')}</strong><span>{t('对应 GoLand 的 Optimize imports：排序、按分组排列并删除未使用的导入')}</span></div>
+                <input type="checkbox" checked={preferences.go.organizeImportsOnSave} onChange={(event) => onChange({ ...preferences, go: { ...preferences.go, organizeImportsOnSave: event.target.checked } })} />
+              </label>
+              <div className="mg-settings-field">
+                <div><label htmlFor="mg-setting-local-prefix">{t('本地导入分组前缀')}</label><span>{t('逗号分隔的模块路径，goimports 按其分组本地导入')}</span></div>
+                <input id="mg-setting-local-prefix" className="mg-settings-input" value={preferences.go.localPrefix} placeholder="my-company/internal" onChange={(event) => onChange({ ...preferences, go: { ...preferences.go, localPrefix: event.target.value } })} />
+              </div>
+            </>}
+            {styleTab === 'other' && <>
+              <label className="mg-settings-field mg-settings-check-field">
+                <div><strong>{t('保存时格式化 Go 代码')}</strong><span>{t('保存前交给 gopls gofmt，并套用 EditorConfig 规则')}</span></div>
+                <input type="checkbox" checked={preferences.go.formatOnSave} onChange={(event) => onChange({ ...preferences, go: { ...preferences.go, formatOnSave: event.target.checked } })} />
+              </label>
+              <label className="mg-settings-field mg-settings-check-field">
+                <div><strong>{t('gofumpt 严格代码风格')}</strong><span>{t('在 gofmt 基础上套用更严格的风格规则（保存格式化时生效）')}</span></div>
+                <input type="checkbox" checked={preferences.go.gofumpt} onChange={(event) => onChange({ ...preferences, go: { ...preferences.go, gofumpt: event.target.checked } })} />
+              </label>
+              <label className="mg-settings-field mg-settings-check-field">
+                <div><strong>{t('staticcheck 代码检查')}</strong><span>{t('gopls 的 staticcheck 诊断与快速修复（对应 GoLand 的 inspection）')}</span></div>
+                <input type="checkbox" checked={preferences.go.staticcheck} onChange={(event) => onChange({ ...preferences, go: { ...preferences.go, staticcheck: event.target.checked } })} />
+              </label>
+            </>}
           </>}
           {section === 'project' && <>
             <div className="mg-settings-section-heading"><h3>{t('项目')}</h3><p>{t('项目文件显示')}</p></div>

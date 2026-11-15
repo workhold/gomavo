@@ -1,4 +1,5 @@
 import type { RefObject } from 'react'
+import { useCallback, useMemo } from 'react'
 import Editor from '@monaco-editor/react'
 import type { OnChange, OnMount } from '@monaco-editor/react'
 import type * as Monaco from 'monaco-editor'
@@ -29,7 +30,17 @@ export interface EditorAreaProps {
   editorTabListRef: RefObject<HTMLDivElement | null>
   beforeEditorMount: (monaco: typeof Monaco) => void
   onEditorMount: OnMount
+  onSplitEditorMount: (editor: Monaco.editor.IStandaloneCodeEditor) => void
   changeFile: OnChange
+  /**
+   * Content the editor model should hold when (re)created for a path, updated
+   * only by external writes (disk reloads, workspace edits, save formatting).
+   * Typing never touches it, so Monaco never sees a value that disagrees with
+   * the live model — feeding typed text back through `value` makes the
+   * wrapper replace the whole document and jump the caret when a render
+   * lands late.
+   */
+  externalContent: Record<string, string>
   editorPreferences: { fontSize: number; lineHeight: number; minimap: boolean; showLineNumbers: boolean; showWhitespace: boolean; wordWrap: boolean; inlayHints: boolean }
   activeIndentOptions: { tabSize: number; insertSpaces: boolean }
   chooseWorkspace: () => Promise<void>
@@ -49,11 +60,16 @@ export function EditorArea(props: EditorAreaProps) {
   const {
     children, t, locale, root, tabs, activePath, activeFile, tabContext, git, showTabContextMenu, selectTab, closeTab,
     navigateHistory, historyNavigationBusy, historyAvailability, editorTabListRef, beforeEditorMount,
-    onEditorMount, changeFile, editorPreferences, activeIndentOptions, chooseWorkspace, openNewProject,
-    showDialog, setPanelView, setPanelOpen, splitPath, setSplitPath, theme, lineNumbersFormatter,
+    onEditorMount, onSplitEditorMount, changeFile, externalContent, editorPreferences, activeIndentOptions,
+    chooseWorkspace, openNewProject, showDialog, setPanelView, setPanelOpen, splitPath, setSplitPath, theme,
+    lineNumbersFormatter,
   } = props
   const splitFile = tabs.find((file) => file.path === splitPath) ?? null
-  const editorOptions = (readOnly: boolean | undefined) => ({ automaticLayout: true, readOnly: !!readOnly, fontFamily: "'JetBrains Mono', 'SFMono-Regular', Consolas, monospace", fontSize: editorPreferences.fontSize, lineHeight: editorPreferences.lineHeight, ...activeIndentOptions, minimap: { enabled: editorPreferences.minimap, scale: 1 }, smoothScrolling: true, cursorBlinking: 'smooth', cursorSmoothCaretAnimation: 'on', scrollBeyondLastLine: false, lineNumbersMinChars: 2, lineNumbers: editorPreferences.showLineNumbers ? (lineNumbersFormatter ?? 'on') : 'off', renderWhitespace: editorPreferences.showWhitespace ? 'all' : 'none', guides: { indentation: true }, padding: { top: 18, bottom: 20 }, bracketPairColorization: { enabled: false }, inlineSuggest: { enabled: true }, suggest: { showWords: true }, multiCursorModifier: 'alt', definitionLinkOpensInPeek: false, gotoLocation: { multipleDefinitions: 'goto' }, wordWrap: editorPreferences.wordWrap ? 'on' : 'off', 'semanticHighlighting.enabled': true, glyphMargin: true, inlayHints: { enabled: editorPreferences.inlayHints ? 'on' : 'off' } } as const)
+  const editorOptions = useCallback((readOnly: boolean | undefined) => ({ automaticLayout: true, readOnly: !!readOnly, fontFamily: "'JetBrains Mono', 'SFMono-Regular', Consolas, monospace", fontSize: editorPreferences.fontSize, lineHeight: editorPreferences.lineHeight, ...activeIndentOptions, minimap: { enabled: editorPreferences.minimap, scale: 1 }, smoothScrolling: true, cursorBlinking: 'smooth', cursorSmoothCaretAnimation: 'off', scrollBeyondLastLine: false, lineNumbersMinChars: 2, lineNumbers: editorPreferences.showLineNumbers ? (lineNumbersFormatter ?? 'on') : 'off', renderWhitespace: editorPreferences.showWhitespace ? 'all' : 'none', guides: { indentation: true }, padding: { top: 18, bottom: 20 }, bracketPairColorization: { enabled: false }, inlineSuggest: { enabled: true }, multiCursorModifier: 'alt', fixedOverflowWidgets: true, definitionLinkOpensInPeek: false, gotoLocation: { multipleDefinitions: 'goto' }, wordWrap: editorPreferences.wordWrap ? 'on' : 'off', 'semanticHighlighting.enabled': true, glyphMargin: true, inlayHints: { enabled: editorPreferences.inlayHints ? 'on' : 'off' } } as const), [editorPreferences, activeIndentOptions, lineNumbersFormatter])
+  // Stable option objects keep the memoized Editor from re-rendering (and
+  // re-running updateOptions) on every keystroke.
+  const mainOptions = useMemo(() => editorOptions(activeFile?.readOnly), [activeFile?.readOnly, editorOptions])
+  const splitOptions = useMemo(() => editorOptions(splitFile?.readOnly), [editorOptions, splitFile?.readOnly])
   return <main className="main-area">
     <div className="editor-tabs">
       <div className="editor-tab-list" ref={editorTabListRef}>{tabs.length ? tabs.map((file) => {
@@ -87,12 +103,12 @@ export function EditorArea(props: EditorAreaProps) {
       {activeFile ? <Editor
         path={fileUri(activeFile.path)}
         language={activeFile.binary ? 'plaintext' : fileLanguage(activeFile.path)}
-        value={activeFile.content}
+        value={externalContent[activeFile.path] ?? activeFile.content}
         theme={theme}
         beforeMount={beforeEditorMount}
         onMount={onEditorMount}
         onChange={changeFile}
-        options={editorOptions(activeFile.readOnly)}
+        options={mainOptions}
       /> : <div className="editor-empty"><div className="empty-symbol"><span>Go</span></div><h1>{t('欢迎使用 MGLand')}</h1><p>{root ? t('从 Project 工具窗口选择文件，开始编写 Go 代码。') : t('选择已有项目，或新建一个 Go 项目。')}</p><div className="welcome-actions"><button type="button" onClick={() => void chooseWorkspace()}><FolderOpen size={17} />{root ? t('打开项目') : t('打开已有项目')}</button>{root ? <><button type="button" onClick={() => showDialog('go', root)}><FilePlus2 size={17} />{t('新建 Go 文件')}</button><button type="button" onClick={() => { setPanelView('terminal'); setPanelOpen(true) }}><TerminalSquare size={17} />{t('终端')}</button></> : <button type="button" onClick={() => void openNewProject()}><FolderPlus size={17} />{t('新建项目')}</button>}</div>{root && <div className="empty-shortcuts"><span><kbd>⇧ ⇧</kbd> {t('搜索文件和命令')}</span><span><kbd>⌘⇧O</kbd> {t('Project')}</span><span><kbd>⌘B</kbd> {t('跳转定义')}</span></div>}</div>}
       {splitFile && splitFile.path !== activeFile?.path ? <div className="editor-split-pane">
         <div className="editor-split-header">
@@ -102,11 +118,12 @@ export function EditorArea(props: EditorAreaProps) {
         <Editor
           path={fileUri(splitFile.path)}
           language={splitFile.binary ? 'plaintext' : fileLanguage(splitFile.path)}
-          value={splitFile.content}
+          value={externalContent[splitFile.path] ?? splitFile.content}
           theme={theme}
           beforeMount={beforeEditorMount}
+          onMount={onSplitEditorMount}
           onChange={changeFile}
-          options={editorOptions(splitFile.readOnly)}
+          options={splitOptions}
         />
       </div> : null}
     </div>

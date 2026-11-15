@@ -23,8 +23,14 @@ export interface UseLspParams {
   activePathRef: RefObject<string | null>
   /** gopls settings applied on (re)start; changing it restarts the server. */
   localPrefix: string
+  /** gopls staticcheck lint diagnostics (default on). */
+  staticcheck: boolean
+  /** gopls gofumpt formatter (default off). */
+  gofumpt: boolean
   /** Applies gopls workspace edits (rename/quick fix) across files. Assigned after this hook returns. */
   workspaceEditsRef: RefObject<((changes: Record<string, LspTextEdit[]>) => Promise<void>) | null>
+  /** Runs `go get` for a module picked from a synthesized BrokenImport quick fix. */
+  missingModuleRef: RefObject<((module: string) => void) | null>
   notify: (text: string, kind?: 'success' | 'error') => void
   formatError: (cause: unknown) => string
   t: (key: MessageKey, values?: Record<string, string | number>) => string
@@ -34,7 +40,8 @@ export interface UseLspParams {
 export function useLsp(params: UseLspParams) {
   const {
     root, monacoApi, goplsAvailable, lspEpoch, tabsRef, navigateTo, captureEditorLocation,
-    navigationRequestRef, activePath, activePathRef, workspaceEditsRef, localPrefix, notify, formatError, t,
+    navigationRequestRef, activePath, activePathRef, workspaceEditsRef, missingModuleRef, localPrefix, staticcheck, gofumpt,
+    notify, formatError, t,
   } = params
   const [lspState, setLspState] = useState<LspState>('idle')
   const [lspError, setLspError] = useState<string | null>(null)
@@ -81,9 +88,9 @@ export function useLsp(params: UseLspParams) {
       const apply = workspaceEditsRef.current
       if (!apply) throw new Error('Workspace edits are not ready')
       return apply(changes)
-    })
+    }, (module) => missingModuleRef.current?.(module))
     lspRef.current = client
-    client.setConfig({ localPrefix: localPrefix || undefined })
+    client.setConfig({ localPrefix, staticcheck, gofumpt })
     setLspState('starting')
     setLspError(null)
     setGoplsLog([])

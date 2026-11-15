@@ -149,6 +149,29 @@
 }
 .mg-settings-action-button:hover { background: #416b9d; }
 
+/* GoLand-style sub-tabs inside the Code Style · Go page. */
+.mg-settings-tabs {
+  display: flex;
+  gap: 2px;
+  margin-top: 4px;
+  border-bottom: 1px solid var(--border-color, #3a3f4b);
+}
+.mg-settings-tabs button {
+  padding: 7px 14px;
+  border: none;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  color: var(--text-secondary, #9aa0aa);
+  font-size: 13px;
+  cursor: pointer;
+}
+.mg-settings-tabs button:hover { color: var(--text-primary, #e8eaed); }
+.mg-settings-tabs button.active {
+  color: var(--text-primary, #e8eaed);
+  border-bottom-color: #3574f0;
+}
+
+
 .mg-settings-shortcut-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 15px; }
 .mg-settings-reset,
 .mg-settings-conflict button {
