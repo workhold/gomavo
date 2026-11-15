@@ -1,0 +1,56 @@
+.unified-diff-view {
+  min-width: 0;
+  min-height: 0;
+  flex: 1;
+  overflow: auto;
+  background: var(--surface-panel);
+  color: var(--text-primary);
+  font: 11px/20px "JetBrains Mono", "SFMono-Regular", Consolas, monospace;
+  tab-size: 4;
+}
+
+.unified-diff-content { width: max-content; }
+.unified-diff-row {
+  display: grid;
+  grid-template-columns: 42px 42px minmax(0, 1fr);
+  height: 20px;
+  min-width: 100%;
+  white-space: pre;
+}
+.unified-diff-gutter {
+  overflow: hidden;
+  padding: 0 7px 0 2px;
+  border-right: 1px solid #34373b;
+  color: var(--text-secondary);
+  text-align: right;
+  user-select: none;
+}
+.unified-diff-code { padding: 0 12px; }
+.unified-diff-prefix { color: inherit; }
+.unified-diff-token.comment { color: var(--text-secondary); }
+.unified-diff-token.string { color: #e4c58a; }
+.unified-diff-token.keyword { color: var(--text-primary); }
+.unified-diff-token.number { color: #d7b48a; }
+.unified-diff-token.function { color: #a2c4ee; }
+.unified-diff-token.type { color: #8ad1cf; }
+.unified-diff-token.tag { color: var(--text-primary); }
+.unified-diff-token.attribute { color: var(--text-primary); }
+.unified-diff-token.pattern { color: #85cad0; }
+.unified-diff-token.hash { color: var(--text-primary); }
+.unified-diff-token.operator { color: #e0b67e; }
+.unified-diff-row.context:hover { background: var(--surface-hover); }
+.unified-diff-row.file {
+  border-top: 1px solid #3a4049;
+  background: var(--surface-hover);
+  color: var(--text-primary);
+  font-weight: 600;
+}
+.unified-diff-row.file:first-child { border-top: 0; }
+.unified-diff-row.meta { color: var(--text-primary); }
+.unified-diff-row.hunk { background: #243449; color: #a9cef8; }
+.unified-diff-row.addition { background: #1d3529; color: var(--text-primary); }
+.unified-diff-row.addition .unified-diff-gutter { color: #80b994; }
+.unified-diff-row.deletion { background: #3b2729; color: var(--text-primary); }
+.unified-diff-row.deletion .unified-diff-gutter { color: #d79591; }
+.unified-diff-row.marker { color: var(--text-primary); font-style: italic; }
+.unified-diff-empty { padding: 12px 14px; color: var(--text-primary); }

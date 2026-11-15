@@ -1,0 +1,215 @@
+import type * as Monaco from 'monaco-editor'
+
+/** GoLand's Islands Dark editor scheme, applied as the `mgland-dark` Monaco theme. */
+export function defineMglandTheme(monaco: typeof Monaco): void {
+  // gopls reports these as modifiers on `type`, `variable`, and `parameter`,
+  // not as standalone `interface` or `struct` token types.
+  const goTypeModifiers = [
+    'array', 'bool', 'chan', 'interface', 'map', 'number',
+    'pointer', 'signature', 'slice', 'string', 'struct',
+  ]
+  defineDark(monaco, goTypeModifiers)
+  defineLight(monaco, goTypeModifiers)
+}
+
+/** Resolve the Monaco theme name for an appearance preference. */
+export function monacoThemeName(theme: 'dark' | 'light' | 'system', prefersColorSchemeDark: boolean): 'mgland-dark' | 'mgland-light' {
+  const effective = theme === 'system' ? (prefersColorSchemeDark ? 'dark' : 'light') : theme
+  return effective === 'light' ? 'mgland-light' : 'mgland-dark'
+}
+
+function defineDark(monaco: typeof Monaco, goTypeModifiers: string[]): void {
+  monaco.editor.defineTheme('mgland-dark', {
+    // Keep the syntax rules explicit so Monaco's built-in VS Dark token
+    // colors cannot leak into Go files.
+    base: 'vs-dark', inherit: false,
+    rules: [
+      // Lexical tokens (also shown while gopls is loading or unavailable).
+      { token: 'comment', foreground: '7A7E85' },
+      { token: 'comment.doc', foreground: '7A7E85', fontStyle: 'italic' },
+      { token: 'keyword', foreground: 'CF8E6D' },
+      { token: 'string', foreground: '6AAB73' },
+      { token: 'string.escape', foreground: 'CF8E6D' },
+      { token: 'string.format', foreground: 'CF8E6D' },
+      { token: 'string.invalid', foreground: 'CF8E6D' },
+      { token: 'number', foreground: '2AACB8' },
+      { token: 'regexp', foreground: '2AACB8' },
+      { token: 'identifier', foreground: 'BCBEC4' },
+      { token: 'delimiter', foreground: 'BCBEC4' },
+      { token: 'operator', foreground: 'BCBEC4' },
+      { token: 'annotation', foreground: 'B3AE60' },
+      { token: 'tag', foreground: 'D5B778' },
+      { token: 'attribute.name', foreground: 'C77DBB' },
+      { token: 'string.key.json', foreground: 'CF8E6D' },
+
+      // gopls semantic tokens, mapped onto the GoLand Go plugin palette
+      // (GO_PACKAGE, GO_*_FUNCTION_CALL, GO_BUILTIN_*, GO_TYPE_REFERENCE).
+      { token: 'namespace', foreground: 'AFBF7E' },
+      { token: 'qualifiedCall', foreground: 'B09D79' },
+      { token: 'type', foreground: '6FAFBD' },
+      { token: 'class', foreground: '6FAFBD' },
+      { token: 'enum', foreground: '6FAFBD' },
+      { token: 'typeParameter', foreground: '16BAAC' },
+      { token: 'type.defaultLibrary', foreground: 'CC7832' },
+      ...goTypeModifiers.flatMap((modifier) => [
+        { token: `type.${modifier}`, foreground: '6FAFBD' },
+        { token: `type.definition.${modifier}`, foreground: 'BCBEC4' },
+      ]),
+      { token: 'variable', foreground: 'BCBEC4' },
+      { token: 'parameter', foreground: 'BCBEC4' },
+      { token: 'variable.readonly', foreground: 'BCBEC4', fontStyle: 'italic' },
+      { token: 'variable.definition.readonly', foreground: 'BCBEC4', fontStyle: 'italic' },
+      { token: 'variable.readonly.defaultLibrary', foreground: 'CC7832' },
+      { token: 'variable.static', foreground: 'BCBEC4', fontStyle: 'italic' },
+      { token: 'variable.definition.static', foreground: 'BCBEC4', fontStyle: 'italic' },
+      { token: 'variable.defaultLibrary', foreground: 'CC7832' },
+      { token: 'variable.shadowing', foreground: '7DBDA2' },
+      { token: 'variable.definition.shadowing', foreground: 'BCBEC4' },
+      ...goTypeModifiers.flatMap((modifier) => [
+        { token: `variable.definition.${modifier}.shadowing`, foreground: 'BCBEC4' },
+        { token: `parameter.definition.${modifier}.shadowing`, foreground: 'BCBEC4' },
+      ]),
+      { token: 'property', foreground: 'BCBEC4' },
+      { token: 'enumMember', foreground: 'BCBEC4', fontStyle: 'italic' },
+      { token: 'function', foreground: 'B09D79' },
+      { token: 'function.definition', foreground: '56A8F5', fontStyle: 'italic' },
+      { token: 'function.defaultLibrary', foreground: 'CC7832' },
+      { token: 'method', foreground: 'B09D79' },
+      { token: 'method.definition', foreground: '56A8F5', fontStyle: 'italic' },
+      { token: 'label', foreground: 'BCBEC4' },
+      { token: 'macro', foreground: 'E39971' },
+      { token: 'modifier', foreground: 'E39971' },
+      { token: 'decorator', foreground: 'B3AE60' },
+    ],
+    colors: {
+      'editor.background': '#191A1C',
+      'editorGutter.background': '#191A1C',
+      'editor.foreground': '#BCBEC4',
+      'editorLineNumber.foreground': '#4B5059',
+      'editorLineNumber.activeForeground': '#A1A3AB',
+      'editorCursor.foreground': '#CED0D6',
+      'editor.selectionBackground': '#214283',
+      'editor.inactiveSelectionBackground': '#1E3A5F',
+      'editor.lineHighlightBackground': '#1F2024',
+      'editorIndentGuide.background1': '#323438',
+      'editorIndentGuide.activeBackground1': '#4E5157',
+      'editorBracketMatch.background': '#43454A',
+      'editorBracketMatch.border': '#43454A',
+      'editorBracketHighlight.foreground1': '#BCBEC4',
+      'editorBracketHighlight.foreground2': '#BCBEC4',
+      'editorBracketHighlight.foreground3': '#BCBEC4',
+      'editorBracketHighlight.foreground4': '#BCBEC4',
+      'editorBracketHighlight.foreground5': '#BCBEC4',
+      'editorBracketHighlight.foreground6': '#BCBEC4',
+      'editor.findMatchBackground': '#2D543F',
+      'editor.findMatchHighlightBackground': '#114957',
+      'editor.wordHighlightBackground': '#373B39',
+      'editor.wordHighlightStrongBackground': '#402F33',
+      'editorLink.activeForeground': '#548AF7',
+      'editorWhitespace.foreground': '#6F737A',
+      'editorRuler.foreground': '#323438',
+      'editorInlayHint.foreground': '#868A91',
+      'editorInlayHint.background': '#393B40',
+      'editorInlayHint.parameterForeground': '#858A94',
+      'editorInlayHint.parameterBackground': '#393B40',
+      'editorInlayHint.typeForeground': '#858A94',
+      'editorInlayHint.typeBackground': '#393B40',
+    },
+  })
+}
+
+/** A light counterpart aligned with GoLand's bundled "Light" scheme. */
+function defineLight(monaco: typeof Monaco, goTypeModifiers: string[]): void {
+  monaco.editor.defineTheme('mgland-light', {
+    base: 'vs', inherit: false,
+    rules: [
+      { token: 'comment', foreground: '8C8C8C', fontStyle: 'italic' },
+      { token: 'comment.doc', foreground: '8C8C8C', fontStyle: 'italic' },
+      { token: 'keyword', foreground: '0033B3' },
+      { token: 'string', foreground: '067D17' },
+      { token: 'string.escape', foreground: '0037A6' },
+      { token: 'string.format', foreground: '0037A6' },
+      { token: 'string.invalid', foreground: '067D17', background: 'FFCCCC' },
+      { token: 'number', foreground: '1750EB' },
+      { token: 'regexp', foreground: '1750EB' },
+      { token: 'identifier', foreground: '080808' },
+      { token: 'delimiter', foreground: '080808' },
+      { token: 'operator', foreground: '080808' },
+      { token: 'annotation', foreground: '9E880D' },
+      { token: 'tag', foreground: '7A5C00' },
+      { token: 'attribute.name', foreground: '8C3F8C' },
+      { token: 'string.key.json', foreground: '0037A6' },
+
+      { token: 'namespace', foreground: '805900' },
+      { token: 'qualifiedCall', foreground: '36666B' },
+      { token: 'type', foreground: '336ECC' },
+      { token: 'class', foreground: '336ECC' },
+      { token: 'enum', foreground: '336ECC' },
+      { token: 'typeParameter', foreground: '317E8A' },
+      { token: 'type.defaultLibrary', foreground: '0033B3' },
+      ...goTypeModifiers.flatMap((modifier) => [
+        { token: `type.${modifier}`, foreground: '336ECC' },
+        { token: `type.definition.${modifier}`, foreground: '080808' },
+      ]),
+      { token: 'variable', foreground: '080808' },
+      { token: 'parameter', foreground: '080808' },
+      { token: 'variable.readonly', foreground: '080808', fontStyle: 'italic' },
+      { token: 'variable.definition.readonly', foreground: '080808', fontStyle: 'italic' },
+      { token: 'variable.readonly.defaultLibrary', foreground: '0033B3' },
+      { token: 'variable.static', foreground: '080808', fontStyle: 'italic' },
+      { token: 'variable.definition.static', foreground: '080808', fontStyle: 'italic' },
+      { token: 'variable.defaultLibrary', foreground: '0033B3' },
+      { token: 'variable.shadowing', foreground: '708C00' },
+      { token: 'variable.definition.shadowing', foreground: '080808' },
+      ...goTypeModifiers.flatMap((modifier) => [
+        { token: `variable.definition.${modifier}.shadowing`, foreground: '080808' },
+        { token: `parameter.definition.${modifier}.shadowing`, foreground: '080808' },
+      ]),
+      { token: 'property', foreground: '080808' },
+      { token: 'enumMember', foreground: '080808', fontStyle: 'italic' },
+      { token: 'function', foreground: '36666B' },
+      { token: 'function.definition', foreground: '00627A', fontStyle: 'italic' },
+      { token: 'function.defaultLibrary', foreground: '0033B3' },
+      { token: 'method', foreground: '36666B' },
+      { token: 'method.definition', foreground: '00627A', fontStyle: 'italic' },
+      { token: 'label', foreground: '080808' },
+      { token: 'macro', foreground: '0033B3' },
+      { token: 'modifier', foreground: '0033B3' },
+      { token: 'decorator', foreground: '9E880D' },
+    ],
+    colors: {
+      'editor.background': '#FFFFFF',
+      'editorGutter.background': '#FFFFFF',
+      'editor.foreground': '#080808',
+      'editorLineNumber.foreground': '#AEB3C2',
+      'editorLineNumber.activeForeground': '#767A8A',
+      'editorCursor.foreground': '#000000',
+      'editor.selectionBackground': '#A6D2FF',
+      'editor.inactiveSelectionBackground': '#D2E8FF',
+      'editor.lineHighlightBackground': '#F5F8FE',
+      'editorIndentGuide.background1': '#EBECEF',
+      'editorIndentGuide.activeBackground1': '#AEB3C2',
+      'editorBracketMatch.background': '#99CCFF',
+      'editorBracketMatch.border': '#99CCFF',
+      'editorBracketHighlight.foreground1': '#080808',
+      'editorBracketHighlight.foreground2': '#080808',
+      'editorBracketHighlight.foreground3': '#080808',
+      'editorBracketHighlight.foreground4': '#080808',
+      'editorBracketHighlight.foreground5': '#080808',
+      'editorBracketHighlight.foreground6': '#080808',
+      'editor.findMatchBackground': '#CCCCFF',
+      'editor.findMatchHighlightBackground': '#FCD47E',
+      'editor.wordHighlightBackground': '#EDEBFC',
+      'editor.wordHighlightStrongBackground': '#FCE8F4',
+      'editorLink.activeForeground': '#0006DC',
+      'editorWhitespace.foreground': '#ADADAD',
+      'editorRuler.foreground': '#EBECEF',
+      'editorInlayHint.foreground': '#7A7A7A',
+      'editorInlayHint.background': '#EDEDED',
+      'editorInlayHint.parameterForeground': '#7A7A7A',
+      'editorInlayHint.parameterBackground': '#EDEDED',
+      'editorInlayHint.typeForeground': '#7A7A7A',
+      'editorInlayHint.typeBackground': '#EDEDED',
+    },
+  })
+}

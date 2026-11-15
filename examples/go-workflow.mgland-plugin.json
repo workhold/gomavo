@@ -1,0 +1,25 @@
+{
+  "id": "local.go-workflow",
+  "name": "Go Workflow",
+  "description": "常用的 Go 项目任务与模块文件入口。",
+  "actions": [
+    {
+      "id": "test-all",
+      "name": "运行全部测试",
+      "type": "goTask",
+      "task": "test"
+    },
+    {
+      "id": "tidy-modules",
+      "name": "整理 Go 模块",
+      "type": "goTask",
+      "task": "mod_tidy"
+    },
+    {
+      "id": "open-mod",
+      "name": "打开 go.mod",
+      "type": "openFile",
+      "path": "go.mod"
+    }
+  ]
+}

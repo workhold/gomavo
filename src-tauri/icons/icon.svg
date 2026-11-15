@@ -1,0 +1,31 @@
+<svg width="1024" height="1024" viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bgGrad" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#262f44"/>
+      <stop offset="1" stop-color="#141a26"/>
+    </linearGradient>
+    <linearGradient id="goGrad" gradientUnits="userSpaceOnUse" x1="0" y1="382" x2="0" y2="768">
+      <stop offset="0" stop-color="#5ad2ee"/>
+      <stop offset="1" stop-color="#00a3cd"/>
+    </linearGradient>
+    <linearGradient id="promptGrad" gradientUnits="userSpaceOnUse" x1="0" y1="404" x2="0" y2="620">
+      <stop offset="0" stop-color="#7b85f6"/>
+      <stop offset="1" stop-color="#515bd6"/>
+    </linearGradient>
+  </defs>
+
+  <!-- rounded-square app background -->
+  <rect x="36" y="36" width="952" height="952" rx="214" fill="url(#bgGrad)"/>
+  <!-- subtle inner ring, echoing the app panel borders -->
+  <rect x="66" y="66" width="892" height="892" rx="192" fill="none" stroke="#7a90ba" stroke-opacity="0.22" stroke-width="5"/>
+
+  <!-- terminal prompt ">" -->
+  <polyline points="146,404 248,512 146,620" fill="none" stroke="url(#promptGrad)" stroke-width="54" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <!-- lowercase "g" (single-story: bowl + descender hook) -->
+  <circle cx="464" cy="509" r="100" fill="none" stroke="url(#goGrad)" stroke-width="54"/>
+  <path d="M 564 509 L 564 690 Q 564 768 488 768 L 468 768" fill="none" stroke="url(#goGrad)" stroke-width="54" stroke-linecap="round"/>
+
+  <!-- lowercase "o" -->
+  <circle cx="782" cy="509" r="100" fill="none" stroke="url(#goGrad)" stroke-width="54"/>
+</svg>

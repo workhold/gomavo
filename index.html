@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#15191f" />
+    <title>MGLand · Go 开发环境</title>
+    <link id="monaco-zh-cn" rel="alternate" href="/node_modules/monaco-editor/min/vs/nls/lang/zh-cn.js" />
+    <script>
+      // A parser-blocking script must run before Vite's module preloads evaluate Monaco.
+      let locale = 'zh-CN'
+      try {
+        if (localStorage.getItem('mgland.locale') === 'en-US') locale = 'en-US'
+      } catch {}
+      document.documentElement.lang = locale
+      if (locale === 'zh-CN') {
+        const nlsUrl = document.getElementById('monaco-zh-cn').href
+        document.write('<script src="' + nlsUrl + '"><\/script>')
+      }
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/bootstrap.ts"></script>
+  </body>
+</html>

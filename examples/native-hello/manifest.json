@@ -1,0 +1,19 @@
+{
+  "id": "example.native-hello",
+  "name": "Native Hello",
+  "version": "1.0.0",
+  "description": "示例原生插件：命令、Go 补全和悬停提示",
+  "main": "main.js",
+  "activationEvents": [
+    "onLanguage:go",
+    "onCommand:example.native-hello.greet"
+  ],
+  "contributes": {
+    "commands": [
+      {
+        "command": "example.native-hello.greet",
+        "title": "插件：Native Hello 打招呼"
+      }
+    ]
+  }
+}
