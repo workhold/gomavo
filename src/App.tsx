@@ -973,6 +973,9 @@ function App() {
     if (windowCloseBusyRef.current) return
     windowClosePromptRef.current = false
     setWindowClosePrompt(false)
+    // A cancelled app-quit leaves its windows open: release the backend's
+    // quitting mark so the session tracks the survivors again.
+    if (desktopAvailable) void command('quit_cancelled').catch(() => undefined)
   }, [])
 
   const finishWindowClose = useCallback(async () => {

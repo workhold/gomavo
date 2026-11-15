@@ -11,6 +11,7 @@ mod process;
 mod project_windows;
 mod runner;
 mod search;
+mod session;
 mod state;
 mod terminal;
 mod watch;
@@ -27,12 +28,16 @@ pub fn run() {
             tauri::WindowEvent::Focused(true) => {
                 project_windows::note_focused_window(window.label());
             }
+            tauri::WindowEvent::Moved(_) | tauri::WindowEvent::Resized(_) => {
+                session::note_geometry(window);
+            }
             tauri::WindowEvent::Destroyed => {
                 window
                     .app_handle()
                     .state::<AppState>()
                     .close_window(window.label());
                 project_windows::forget_window(window.label());
+                session::window_destroyed(window.app_handle(), window.label());
             }
             _ => {}
         })
@@ -40,6 +45,7 @@ pub fn run() {
             project_windows::install_file_menu(app.handle())?;
             #[cfg(target_os = "macos")]
             project_windows::install_dock_menu(app.handle());
+            session::restore(app.handle());
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -48,6 +54,7 @@ pub fn run() {
             project_windows::open_new_project_window,
             project_windows::open_empty_project_window,
             project_windows::create_go_project,
+            session::quit_cancelled,
             files::open_workspace,
             files::list_directory,
             files::list_project_files,
@@ -108,9 +115,13 @@ pub fn run() {
         ])
         .build(tauri::generate_context!())
         .expect("Failed to build MG Land")
-        .run(|app, event| {
-            if let tauri::RunEvent::Exit = event {
+        .run(|app, event| match event {
+            // Quitting windows must stay in the session file; window teardown
+            // that happens after this point is app shutdown, not a user close.
+            tauri::RunEvent::ExitRequested { .. } => session::mark_quitting(),
+            tauri::RunEvent::Exit => {
                 app.state::<AppState>().shutdown_all();
             }
+            _ => {}
         });
 }

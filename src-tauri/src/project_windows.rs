@@ -22,9 +22,9 @@ const OPEN_SETTINGS_MENU_ID: &str = "app.settings";
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct StartupIntent {
-    workspace: Option<String>,
-    new_project: bool,
-    empty_window: bool,
+    pub(crate) workspace: Option<String>,
+    pub(crate) new_project: bool,
+    pub(crate) empty_window: bool,
 }
 
 impl StartupIntent {
@@ -63,6 +63,31 @@ pub(crate) fn forget_window(label: &str) {
     }
 }
 
+pub(crate) fn intents_snapshot() -> Vec<(String, StartupIntent)> {
+    lock(window_intents())
+        .map(|intents| {
+            let mut entries: Vec<_> = intents.clone().into_iter().collect();
+            entries.sort_by_key(|(label, _)| crate::session::label_sort_key(label));
+            entries
+        })
+        .unwrap_or_default()
+}
+
+pub(crate) fn seed_main_intent(intent: StartupIntent) {
+    if let Ok(mut intents) = window_intents().lock() {
+        intents.insert("main".to_string(), intent);
+    }
+}
+
+/// Parse and canonicalize the process command-line startup intent.
+pub(crate) fn cli_startup_intent() -> BackendResult<StartupIntent> {
+    let mut intent = parse_startup_intent(env::args_os().skip(1))?;
+    if let Some(path) = intent.workspace.as_deref() {
+        intent.workspace = Some(canonical_directory(path)?.to_string_lossy().into_owned());
+    }
+    Ok(intent)
+}
+
 fn focused_window_label(app: &AppHandle) -> Option<String> {
     if let Some(window) = app
         .webview_windows()
@@ -83,7 +108,7 @@ fn focused_window_label(app: &AppHandle) -> Option<String> {
     }
 }
 
-pub(crate) fn set_window_workspace(label: &str, path: &Path) -> BackendResult<()> {
+pub(crate) fn set_window_workspace(app: &AppHandle, label: &str, path: &Path) -> BackendResult<()> {
     lock(window_intents())?.insert(
         label.to_string(),
         StartupIntent {
@@ -92,6 +117,7 @@ pub(crate) fn set_window_workspace(label: &str, path: &Path) -> BackendResult<()
             empty_window: false,
         },
     );
+    crate::session::workspace_changed(app);
     Ok(())
 }
 
@@ -141,17 +167,12 @@ pub(crate) fn startup_intent(window: WebviewWindow) -> BackendResult<StartupInte
     if window.label() != "main" {
         return Err("The project window has no startup intent".to_string());
     }
-    let mut intent = parse_startup_intent(env::args_os().skip(1))?;
-    if let Some(path) = intent.workspace.as_deref() {
-        intent.workspace = Some(canonical_directory(path)?.to_string_lossy().into_owned());
-    }
+    let intent = cli_startup_intent()?;
     intents.insert(window.label().to_string(), intent.clone());
     Ok(intent)
 }
 
-fn create_window(app: &AppHandle, intent: StartupIntent) -> BackendResult<()> {
-    let window_id = NEXT_WINDOW_ID.fetch_add(1, Ordering::Relaxed);
-    let label = format!("project-{window_id}");
+fn base_window_config(app: &AppHandle) -> BackendResult<tauri::utils::config::WindowConfig> {
     let mut config = app
         .config()
         .app
@@ -159,11 +180,67 @@ fn create_window(app: &AppHandle, intent: StartupIntent) -> BackendResult<()> {
         .first()
         .ok_or("The main window configuration is missing")?
         .clone();
-    config.label = label.clone();
     config.title = "MG Land".to_string();
     config.decorations = true;
     config.resizable = true;
     config.maximizable = true;
+    Ok(config)
+}
+
+fn build_window(
+    app: &AppHandle,
+    config: tauri::utils::config::WindowConfig,
+    label: &str,
+    focus: bool,
+) -> BackendResult<()> {
+    let built = WebviewWindowBuilder::from_config(app, &config).and_then(|builder| builder.build());
+    match built {
+        Ok(window) => {
+            crate::session::window_created(app, &window);
+            if focus {
+                let _ = window.set_focus();
+            }
+            Ok(())
+        }
+        Err(error) => {
+            forget_window(label);
+            Err(format!("Could not open a project window: {error}"))
+        }
+    }
+}
+
+pub(crate) fn restore_window(
+    app: &AppHandle,
+    label: String,
+    intent: StartupIntent,
+    geometry: crate::session::WindowGeometry,
+) -> BackendResult<()> {
+    let mut config = base_window_config(app)?;
+    config.label = label.clone();
+    if let Some(id) = label.strip_prefix("project-").and_then(|id| id.parse::<u64>().ok()) {
+        NEXT_WINDOW_ID.fetch_max(id + 1, Ordering::Relaxed);
+    }
+    if let Some(width) = geometry.width {
+        config.width = width;
+    }
+    if let Some(height) = geometry.height {
+        config.height = height;
+    }
+    if geometry.maximized {
+        config.maximized = true;
+    } else {
+        config.x = geometry.x;
+        config.y = geometry.y;
+    }
+    lock(window_intents())?.insert(label.clone(), intent);
+    build_window(app, config, &label, true)
+}
+
+fn create_window(app: &AppHandle, intent: StartupIntent) -> BackendResult<()> {
+    let window_id = NEXT_WINDOW_ID.fetch_add(1, Ordering::Relaxed);
+    let label = format!("project-{window_id}");
+    let mut config = base_window_config(app)?;
+    config.label = label.clone();
 
     // Each project has its own native window. Place it beside the active one
     // so the windows do not obscure one another immediately after creation.
@@ -204,17 +281,7 @@ fn create_window(app: &AppHandle, intent: StartupIntent) -> BackendResult<()> {
         }
     }
     lock(window_intents())?.insert(label.clone(), intent);
-    let built = WebviewWindowBuilder::from_config(app, &config).and_then(|builder| builder.build());
-    match built {
-        Ok(window) => {
-            let _ = window.set_focus();
-            Ok(())
-        }
-        Err(error) => {
-            forget_window(&label);
-            Err(format!("Could not open a project window: {error}"))
-        }
-    }
+    build_window(app, config, &label, true)
 }
 
 #[cfg(target_os = "macos")]
@@ -452,11 +519,21 @@ pub(crate) fn install_file_menu(app: &AppHandle) -> tauri::Result<()> {
         }
         #[cfg(target_os = "macos")]
         if event.id() == QUIT_APP_MENU_ID {
-            // Each window's CloseRequested handler may cancel its own close.
-            // Closing all windows is also how a successful Quit exits Tauri.
-            for window in app.webview_windows().into_values() {
-                let _ = window.close();
-            }
+            // Closing windows from inside the menu action can run during
+            // AppKit menu tracking, where the per-window close-requested flow
+            // is skipped and unsaved-file prompts never appear. Deferring to a
+            // worker keeps the prompts working, like the Dock actions do.
+            let app = app.clone();
+            std::thread::spawn(move || {
+                // Snapshot the session before any window closes: windows that
+                // answer their prompt by closing must still restore next
+                // launch, so teardown while quitting never rewrites the file.
+                crate::session::persist(&app);
+                crate::session::mark_quitting();
+                for window in app.webview_windows().into_values() {
+                    let _ = window.close();
+                }
+            });
             return;
         }
         let event_name = if event.id() == NEW_PROJECT_MENU_ID {

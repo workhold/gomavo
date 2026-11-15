@@ -4,7 +4,7 @@ use std::io::{self, Read, Write};
 use std::process::Stdio;
 use std::thread;
 use std::path::Path;
-use tauri::{State, WebviewWindow};
+use tauri::{Manager, State, WebviewWindow};
 
 use crate::dto::{BinaryPreview, FileEntry};
 use crate::git::git_command_base;
@@ -29,7 +29,7 @@ pub(crate) fn open_workspace(
         *active = Some(canonical.clone());
     }
     drop(active);
-    project_windows::set_window_workspace(window.label(), &canonical)?;
+    project_windows::set_window_workspace(window.app_handle(), window.label(), &canonical)?;
     let name = canonical.file_name().unwrap_or(canonical.as_os_str());
     let _ = window.set_title(&format!("{} — MG Land", name.to_string_lossy()));
     Ok(canonical.to_string_lossy().into_owned())
