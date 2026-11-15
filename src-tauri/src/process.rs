@@ -93,9 +93,13 @@ pub(crate) fn version(program: &str, args: &[&str]) -> Option<String> {
 pub(crate) fn resolve_bundled(app: &tauri::AppHandle, name: &str) -> Option<PathBuf> {
     use tauri::Manager;
     if let Ok(resource_dir) = app.path().resource_dir() {
-        let bundled = resource_dir.join("binaries").join(name);
-        if bundled.is_file() {
-            return Some(bundled);
+        let dir = resource_dir.join("binaries");
+        let candidates = [name.to_string(), format!("{name}.exe")];
+        for candidate in candidates {
+            let bundled = dir.join(candidate);
+            if bundled.is_file() {
+                return Some(bundled);
+            }
         }
     }
     let from_path = resolve_executable(name);

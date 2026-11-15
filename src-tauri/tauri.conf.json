@@ -30,10 +30,8 @@
     "active": true,
     "targets": "all",
     "resources": [
-      "binaries/dlv",
-      "binaries/dlv-LICENSE",
-      "binaries/gopls",
-      "binaries/gopls-LICENSE"
+      "binaries/dlv*",
+      "binaries/gopls*"
     ],
     "icon": [
       "icons/32x32.png",

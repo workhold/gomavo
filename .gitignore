@@ -9,5 +9,6 @@ src-tauri/gen/schemas/
 build/
 src-tauri/binaries/dlv
 src-tauri/binaries/gopls
+src-tauri/binaries/*.exe
 .claude/
 .zcode/
