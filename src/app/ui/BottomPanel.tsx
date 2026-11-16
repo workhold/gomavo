@@ -2,7 +2,7 @@ import { useMemo, useState, type ReactNode } from 'react'
 import type { RefObject } from 'react'
 import {
   AlertCircle, Bug, Check, ChevronDown, FlaskConical, GitBranch, History,
-  PanelBottomClose, PanelBottomOpen, Play, RefreshCw, Search, Square, TerminalSquare, Trash2, X,
+  ListTodo, PanelBottomClose, PanelBottomOpen, Play, RefreshCw, Search, Square, TerminalSquare, Trash2, X,
 } from 'lucide-react'
 import { TerminalPane } from '../../components/TerminalPane'
 import { UnifiedDiffView } from '../../components/UnifiedDiffView'
@@ -20,7 +20,10 @@ import { LOCAL_HISTORY_LABELS } from '../constants'
 import { SearchPane } from './SearchPane'
 import { DebugPane } from './DebugPane'
 import { GitLogPane, MergeResolverPane } from './GitPanes'
-import type { DebugConsoleLine, DebuggerFrame, DebuggerState, DebuggerVariable } from '../hooks/useDebugger'
+import { TodoPane } from './TodoPane'
+import { UsagesPane, type UsageItem } from './UsagesPane'
+import type { DapThread } from '../../lib/debug/dapClient'
+import type { DebugConsoleLine, DebuggerFrame, DebuggerState, DebuggerVariable, WatchEntry } from '../hooks/useDebugger'
 import type {
   FileHistorySource, GitFileHistoryView, OutputLine, PanelView, TaskOptions, TestResult,
 } from '../types'
@@ -76,9 +79,19 @@ export interface BottomPanelProps {
   debugConsole: DebugConsoleLine[]
   debugControl: (command: 'continue' | 'next' | 'stepIn' | 'stepOut' | 'pause' | 'disconnect', threadId?: number) => Promise<void>
   debugCurrentThreadId: number | null
+  /** Goroutine switcher, watch expressions, and REPL evaluation. */
+  debugThreads: DapThread[]
+  debugSelectThread: (threadId: number) => Promise<void>
+  debugWatches: WatchEntry[]
+  debugAddWatch: (expression: string) => void
+  debugRemoveWatch: (id: number) => void
+  debugEvaluateRepl: (expression: string) => Promise<void>
   dlvInstalled: boolean
   installDlv: () => void
   startDebug: () => void
+  /** Find Usages results (identifier + references) shown in the usages tab. */
+  usages: { identifier: string; items: UsageItem[] } | null
+  usagesBusy: boolean
   gitGraph: import('../../lib/api').GitGraphCommit[]
   gitGraphLoading: boolean
   refreshGitGraph: () => Promise<void>
@@ -194,6 +207,8 @@ export function BottomPanel(props: BottomPanelProps) {
     selectedHistoryEntry, openGitFileCommitDiff, projectFiles, searchRevision, onReplaced,
     debugState, debugFrames, debugSelectedFrameIndex, debugSelectFrame, debugVariables,
     debugExpandVariable, debugConsole, debugControl, debugCurrentThreadId, dlvInstalled, installDlv, startDebug,
+    debugThreads, debugSelectThread, debugWatches, debugAddWatch, debugRemoveWatch, debugEvaluateRepl,
+    usages, usagesBusy,
     gitGraph, gitGraphLoading, refreshGitGraph, mergeConflicts, mergeResolverPath, openMergeResolver,
     mergeResolved, refreshGit, notify, formatError,
   } = props
@@ -225,6 +240,8 @@ export function BottomPanel(props: BottomPanelProps) {
       {tab('output', t('Run'), <Play size={14} />, runningTask ? <span className="running-indicator" /> : null)}
       {tab('tests', t('Test Results'), <FlaskConical size={14} />, testResults.length > 0 ? <span className="panel-count">{testPassed + testFailed}</span> : null)}
       {tab('search', t('Search'), <Search size={14} />)}
+      {tab('usages', t('查找用法'), <Search size={14} />, usages ? <span className="panel-count">{usages.items.length}</span> : null)}
+      {tab('todo', 'TODO', <ListTodo size={14} />)}
       {tab('debug', t('Debug'), <Bug size={14} />, debugState !== 'idle' ? <span className="running-indicator" /> : null)}
       {tab('terminal', t('Terminal'), <TerminalSquare size={14} />)}
       {tab('problems', t('Problems'), <AlertCircle size={14} />, diagnostics.length > 0 ? <span className="panel-count">{diagnostics.length}</span> : null)}
@@ -245,12 +262,21 @@ export function BottomPanel(props: BottomPanelProps) {
       <div className={`panel-page search-page ${panelView === 'search' ? 'visible' : ''}`}>
         <SearchPane t={t} locale={locale} root={root} revision={searchRevision} navigateTo={navigateTo} onReplaced={onReplaced} />
       </div>
+      <div className={`panel-page ${panelView === 'usages' ? 'visible' : ''}`}>
+        <UsagesPane t={t} locale={locale} identifier={usages?.identifier ?? null} usages={usages?.items ?? []} busy={usagesBusy} navigateTo={navigateTo} />
+      </div>
+      <div className={`panel-page ${panelView === 'todo' ? 'visible' : ''}`}>
+        <TodoPane t={t} locale={locale} root={root} revision={searchRevision} active={panelView === 'todo' && panelOpen} navigateTo={navigateTo} />
+      </div>
       <div className={`panel-page debug-page ${panelView === 'debug' ? 'visible' : ''}`}>
         <DebugPane
           t={t} locale={locale} debugState={debugState} frames={debugFrames}
           selectedFrameIndex={debugSelectedFrameIndex} selectFrame={debugSelectFrame}
           variables={debugVariables} expandVariable={debugExpandVariable}
           consoleLines={debugConsole} control={debugControl} currentThreadId={debugCurrentThreadId}
+          threads={debugThreads} selectThread={debugSelectThread}
+          watches={debugWatches} addWatch={debugAddWatch} removeWatch={debugRemoveWatch}
+          evaluateRepl={debugEvaluateRepl}
           dlvInstalled={dlvInstalled} installDlv={installDlv} startDebug={startDebug}
         />
       </div>

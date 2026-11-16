@@ -23,11 +23,29 @@ export interface DebugConsoleLine {
   text: string
 }
 
+/** Extra breakpoint behavior beyond "stop here". */
+export interface BreakpointSpec {
+  /** DAP `condition`: stop only when the expression is truthy. */
+  condition?: string
+  /** DAP `logMessage`: log instead of stopping (`{expr}` interpolates). */
+  logMessage?: string
+}
+
+export interface WatchEntry {
+  id: number
+  expression: string
+  /** Evaluated result at the selected frame; refreshed on every stop. */
+  value: string
+  failed?: boolean
+}
+
 export interface UseDebuggerParams {
   root: string | null
   rootRef: RefObject<string | null>
   /** Live breakpoint map: absolute path → line numbers. */
   breakpointsRef: RefObject<Record<string, number[]>>
+  /** Per-breakpoint condition/logMessage specs, keyed path → line → spec. */
+  breakpointSpecsRef: RefObject<Record<string, Record<number, BreakpointSpec>>>
   setPanelOpen: (value: boolean | ((current: boolean) => boolean)) => void
   setPanelView: (value: PanelView) => void
   notify: (text: string, kind?: 'success' | 'error') => void
@@ -44,7 +62,7 @@ interface StoppedEvent {
 
 /** Delve debugging: session lifecycle, breakpoints, stepping, and inspection. */
 export function useDebugger(params: UseDebuggerParams) {
-  const { root, rootRef, breakpointsRef, setPanelOpen, setPanelView, notify, formatError, t } = params
+  const { root, rootRef, breakpointsRef, breakpointSpecsRef, setPanelOpen, setPanelView, notify, formatError, t } = params
   const [state, setState] = useState<DebuggerState>('idle')
   const [frames, setFrames] = useState<DebuggerFrame[]>([])
   const [selectedFrameIndex, setSelectedFrameIndex] = useState(0)
@@ -53,20 +71,34 @@ export function useDebugger(params: UseDebuggerParams) {
   const [currentThreadId, setCurrentThreadId] = useState<number | null>(null)
   const [consoleLines, setConsoleLines] = useState<DebugConsoleLine[]>([])
   const [currentLocation, setCurrentLocation] = useState<{ path: string; line: number; column: number } | null>(null)
+  const [watches, setWatches] = useState<WatchEntry[]>([])
   const clientRef = useRef<DapClient | null>(null)
   const consoleIdRef = useRef(0)
   const configurationDoneRef = useRef(false)
   const stoppedRef = useRef(false)
+  const watchIdRef = useRef(0)
+  const selectedFrameIndexRef = useRef(0)
+  selectedFrameIndexRef.current = selectedFrameIndex
+  const watchesRef = useRef<WatchEntry[]>([])
+  watchesRef.current = watches
+  /** Most recent top-frame id, kept for late watch additions while stopped. */
+  const topFrameIdRef = useRef<number | null>(null)
 
   const addConsole = useCallback((category: string, text: string) => {
     setConsoleLines((current) => [...current, { id: ++consoleIdRef.current, category, text }].slice(-500))
   }, [])
 
-  const loadFrames = useCallback(async (threadId: number, client: DapClient) => {
+  /** DAP breakpoint payload for one line, enriched with its condition/logMessage spec. */
+  const specFor = useCallback((path: string, line: number): BreakpointSpec => {
+    return breakpointSpecsRef.current?.[path]?.[line] ?? {}
+  }, [breakpointSpecsRef])
+
+  const loadFrames = useCallback(async (threadId: number, client: DapClient): Promise<number | null> => {
     const stack = await client.request<{ stackFrames: DapStackFrame[] }>('stackTrace', { threadId, levels: 0, startFrame: 0 })
     setFrames((stack.stackFrames ?? []).map((frame) => ({ ...frame, scopesLoaded: false })))
     setSelectedFrameIndex(0)
     const top = stack.stackFrames?.[0]
+    topFrameIdRef.current = top?.id ?? null
     if (top?.source?.path) {
       setCurrentLocation({ path: top.source.path, line: top.line, column: top.column })
     }
@@ -83,11 +115,32 @@ export function useDebugger(params: UseDebuggerParams) {
       })
     }
     setVariables(groups)
+    return top?.id ?? null
   }, [])
 
   const fetchVariables = useCallback(async (reference: number, client: DapClient): Promise<DebuggerVariable[]> => {
     const response = await client.request<{ variables: DapVariable[] }>('variables', { variablesReference: reference })
     return (response.variables ?? []).map((variable) => ({ ...variable, children: variable.variablesReference > 0 ? [] : undefined }))
+  }, [])
+
+  /** Re-evaluate every watch expression at the given stack frame. */
+  const refreshWatches = useCallback(async (client: DapClient, frameId: number | null) => {
+    const entries = watchesRef.current
+    if (!entries.length) return
+    const results = await Promise.all(entries.map(async (entry) => {
+      try {
+        const response = await client.request<{ result: string; succeeded?: boolean }>('evaluate', {
+          expression: entry.expression,
+          ...(frameId !== null ? { frameId } : {}),
+          context: 'watch',
+          format: { hex: false },
+        })
+        return { id: entry.id, expression: entry.expression, value: response.result ?? '' }
+      } catch (cause) {
+        return { id: entry.id, expression: entry.expression, value: cause instanceof Error ? cause.message : String(cause), failed: true }
+      }
+    }))
+    setWatches(results)
   }, [])
 
   const handleEvent = useCallback((event: string, body: unknown) => {
@@ -104,7 +157,14 @@ export function useDebugger(params: UseDebuggerParams) {
               await client.request('setBreakpoints', {
                 source: { path },
                 lines,
-                breakpoints: lines.map((line) => ({ line })),
+                breakpoints: lines.map((line) => {
+                  const spec = specFor(path, line)
+                  return {
+                    line,
+                    ...(spec.condition ? { condition: spec.condition } : {}),
+                    ...(spec.logMessage ? { logMessage: spec.logMessage } : {}),
+                  }
+                }),
               })
             }
             await client.request('setExceptionBreakpoints', { filters: [] })
@@ -127,7 +187,8 @@ export function useDebugger(params: UseDebuggerParams) {
             const resolved = active?.id ?? threadId
             setCurrentThreadId(resolved)
             setState('stopped')
-            await loadFrames(resolved, client)
+            const topFrameId = await loadFrames(resolved, client)
+            await refreshWatches(client, topFrameId)
             const message = stopped.description ?? (stopped.reason === 'break' ? t('命中断点') : stopped.reason)
             addConsole('status', message)
           } catch (cause) {
@@ -164,7 +225,7 @@ export function useDebugger(params: UseDebuggerParams) {
         break
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [addConsole, breakpointsRef, currentThreadId, formatError, loadFrames, notify, t])
+  }, [addConsole, breakpointsRef, currentThreadId, formatError, loadFrames, notify, refreshWatches, specFor, t])
 
   const cleanup = useCallback(async (nextState: DebuggerState) => {
     if (stoppedRef.current) return
@@ -179,6 +240,8 @@ export function useDebugger(params: UseDebuggerParams) {
     setThreads([])
     setCurrentThreadId(null)
     setCurrentLocation(null)
+    topFrameIdRef.current = null
+    setWatches((current) => current.map((entry) => ({ ...entry, value: '', failed: true })))
   }, [])
 
   const startDebug = useCallback(async (mode: 'debug' | 'test', options: TaskOptions = {}) => {
@@ -208,6 +271,7 @@ export function useDebugger(params: UseDebuggerParams) {
         supportsVariableType: true,
         supportsVariablePaging: false,
         supportsRunInTerminalRequest: false,
+        supportsEvaluateForHovers: true,
       })
       // Resolve the program directory the same way run configurations do.
       const target = options.targetPath
@@ -241,8 +305,15 @@ export function useDebugger(params: UseDebuggerParams) {
     try {
       if (commandName === 'disconnect') {
         setState('stopping')
-        await client.request('disconnect', { terminateDebuggee: true })
-        await cleanup('idle')
+        try {
+          await client.request('disconnect', { terminateDebuggee: true })
+        } catch (cause) {
+          notify(formatError(cause), 'error')
+        } finally {
+          // Reach idle even when the request fails: a dead or wedged session
+          // must not leave the pane stuck on "Stopping…" forever.
+          await cleanup('idle')
+        }
         return
       }
       await client.request(commandName, { threadId })
@@ -260,10 +331,17 @@ export function useDebugger(params: UseDebuggerParams) {
       await client.request('setBreakpoints', {
         source: { path },
         lines,
-        breakpoints: lines.map((line) => ({ line })),
+        breakpoints: lines.map((line) => {
+          const spec = specFor(path, line)
+          return {
+            line,
+            ...(spec.condition ? { condition: spec.condition } : {}),
+            ...(spec.logMessage ? { logMessage: spec.logMessage } : {}),
+          }
+        }),
       })
     } catch { /* a stale session logs to the console instead */ }
-  }, [])
+  }, [specFor])
 
   /** Expand one variable node by fetching its children. */
   const expandVariable = useCallback(async (groupIndex: number, path: number[]) => {
@@ -289,6 +367,55 @@ export function useDebugger(params: UseDebuggerParams) {
     })
   }, [fetchVariables])
 
+  /** Add a watch expression; evaluated live once the session stops. */
+  const addWatch = useCallback((expression: string) => {
+    const trimmed = expression.trim()
+    if (!trimmed) return
+    // Update the ref before refreshing: refreshWatches reads it in the same
+    // tick, before the setWatches re-render re-syncs it.
+    const entry: WatchEntry = { id: ++watchIdRef.current, expression: trimmed, value: '' }
+    watchesRef.current = [...watchesRef.current, entry]
+    setWatches(watchesRef.current)
+    const client = clientRef.current
+    if (client && state === 'stopped') void refreshWatches(client, topFrameIdRef.current)
+  }, [refreshWatches, state])
+
+  const removeWatch = useCallback((id: number) => {
+    setWatches((current) => current.filter((entry) => entry.id !== id))
+  }, [])
+
+  /** Evaluate an expression in the debug console (REPL context). */
+  const evaluateRepl = useCallback(async (expression: string) => {
+    const client = clientRef.current
+    addConsole('input', expression)
+    if (!client) { addConsole('error', t('未在调试')); return }
+    const frame = frames[selectedFrameIndexRef.current]
+    try {
+      const response = await client.request<{ result: string }>('evaluate', {
+        expression,
+        ...(frame ? { frameId: frame.id } : {}),
+        context: 'repl',
+        format: { hex: false },
+      })
+      addConsole('result', response.result ?? '')
+    } catch (cause) {
+      addConsole('error', cause instanceof Error ? cause.message : String(cause))
+    }
+  }, [addConsole, frames, t])
+
+  /** Switch the inspected goroutine/thread: reload stack and variables for it. */
+  const selectThread = useCallback(async (threadId: number) => {
+    const client = clientRef.current
+    if (!client) return
+    setCurrentThreadId(threadId)
+    try {
+      const topFrameId = await loadFrames(threadId, client)
+      await refreshWatches(client, topFrameId)
+    } catch (cause) {
+      notify(formatError(cause), 'error')
+    }
+  }, [formatError, loadFrames, notify, refreshWatches])
+
   useEffect(() => {
     if (!root) void cleanup('idle')
   }, [root, cleanup])
@@ -303,11 +430,16 @@ export function useDebugger(params: UseDebuggerParams) {
     debugCurrentThreadId: currentThreadId,
     debugConsole: consoleLines,
     debugLocation: currentLocation,
+    debugWatches: watches,
     debugClientActive: () => !!clientRef.current,
     startDebug,
     debugControl: control,
     syncBreakpoints,
     expandVariable,
+    addWatch,
+    removeWatch,
+    evaluateRepl,
+    selectThread,
     selectFrame: (index: number) => {
       setSelectedFrameIndex(index)
       const frame = frames[index]

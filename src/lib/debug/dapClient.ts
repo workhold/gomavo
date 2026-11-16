@@ -143,11 +143,11 @@ export class DapClient {
     const seq = this.nextSeq
     this.nextSeq += 1
     const task = this.sendQueue.then(async () => {
-      await invoke('debug_send', {
-        id: session,
-        message: { seq, type: 'request', command, arguments: args ?? {} },
-      })
-      return new Promise<T>((resolve, reject) => {
+      // Register the pending entry before the bytes go out: dlv answers fast
+      // requests like setBreakpoints in under a millisecond, so the relayed
+      // response can beat `invoke`'s resolution back to the webview and would
+      // otherwise be dropped as unmatched.
+      const promise = new Promise<T>((resolve, reject) => {
         const timer = window.setTimeout(() => {
           this.pending.delete(seq)
           reject(new Error(`Delve request timed out: ${command}`))
@@ -158,6 +158,21 @@ export class DapClient {
           timer,
         })
       })
+      try {
+        await invoke('debug_send', {
+          id: session,
+          message: { seq, type: 'request', command, arguments: args ?? {} },
+        })
+      } catch (cause) {
+        const pending = this.pending.get(seq)
+        if (pending) {
+          this.pending.delete(seq)
+          window.clearTimeout(pending.timer)
+          pending.reject(cause instanceof Error ? cause : new Error(String(cause)))
+        }
+        throw cause
+      }
+      return promise
     })
     this.sendQueue = task.then(() => undefined, () => undefined)
     return task

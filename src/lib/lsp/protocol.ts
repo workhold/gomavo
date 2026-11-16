@@ -140,6 +140,8 @@ export interface LspCodeAction {
   isPreferred?: boolean
   edit?: LspWorkspaceEdit
   command?: LspCommand
+  /** Present on actions the server resolves lazily via codeAction/resolve. */
+  data?: unknown
 }
 
 export interface LspSignatureInformation {

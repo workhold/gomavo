@@ -4,8 +4,8 @@ import type { NavigationLocation } from '../lib/navigationHistory'
 import type { EditorConfigSettings } from '../lib/editorConfig'
 
 export type OpenFile = { path: string; content: string; savedContent: string; readOnly?: boolean; binary?: boolean; pinned?: boolean; editorConfig?: EditorConfigSettings }
-export type SideView = 'files' | 'git'
-export type PanelView = 'terminal' | 'output' | 'tests' | 'problems' | 'diff' | 'history' | 'search' | 'debug' | 'log' | 'merge'
+export type SideView = 'files' | 'git' | 'structure' | 'bookmarks'
+export type PanelView = 'terminal' | 'output' | 'tests' | 'problems' | 'diff' | 'history' | 'search' | 'debug' | 'log' | 'merge' | 'todo' | 'usages'
 export type FileHistorySource = 'local' | 'git'
 export type DialogState = { kind: 'go' | 'file' | 'module' | 'workspace' | 'folder' | 'rename'; parent: string; target?: FileEntry }
 export type ContextState = { x: number; y: number; entry: FileEntry; parent: string; mode: 'context' | 'new' }
@@ -15,7 +15,7 @@ export type OutputLine = { id: number; text: string; stream: 'meta' | 'stdout' |
 export type LspState = 'idle' | 'starting' | 'ready' | 'missing' | 'error'
 export type TestResult = { package: string; name: string; status: 'run' | 'pass' | 'fail' | 'skip'; elapsed?: number }
 export type GoTestEvent = { Action?: string; Package?: string; Test?: string; Output?: string; Elapsed?: number }
-export type PaletteMode = 'all' | 'files' | 'actions' | 'symbols' | 'recent'
+export type PaletteMode = 'all' | 'files' | 'actions' | 'symbols' | 'recent' | 'intentions' | 'generate'
 export type TaskScope = 'workspace' | 'file' | 'package' | 'directory'
 export type TaskOptions = {
   scope?: TaskScope
@@ -30,6 +30,8 @@ export type TaskOptions = {
   /** Collect a coverage profile for `go test`. */
   coverage?: boolean
   module?: string
+  /** Benchmark pattern for `go test -bench` (`-run=^$`); empty string runs all. */
+  bench?: string
 }
 export type StartupIntent = { workspace: string | null; newProject: boolean; emptyWindow: boolean }
 export type EditorNavigationLocation = NavigationLocation<Monaco.editor.ICodeEditorViewState>

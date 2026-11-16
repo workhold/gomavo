@@ -5,17 +5,19 @@ import { ask, open } from '@tauri-apps/plugin-dialog'
 import { listen, type UnlistenFn } from '@tauri-apps/api/event'
 import { getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow'
 import {
-  AlertCircle, AppWindow, Braces, Check, CircleHelp, Download, FlaskConical, Folder, FolderOpen, FolderPlus,
-  GitBranch, Hammer, Package, Play, Search, Settings2, TerminalSquare, Wrench, X,
+  AlertCircle, AppWindow, Bookmark, Braces, Check, CircleHelp, Download, FlaskConical, Folder, FolderOpen, FolderPlus,
+  GitBranch, Hammer, ListTree, Package, Play, Search, Settings2, TerminalSquare, Wrench, X,
 } from 'lucide-react'
 import { SettingsPane, type SettingsSection } from './components/SettingsPane'
 import {
   command, desktopAvailable, displayName, errorMessage, fileLanguage,
   joinPath, relativePath, type BinaryPreview, type FileEntry, type GoModInfo, type ReplaceFileResult, type ToolVersions,
 } from './lib/api'
-import { fileUri, uriToPath, applyTextEdits, type WorkspaceSymbolEntry, type LspTextEdit } from './lib/lsp'
+import { fileUri, uriToPath, applyTextEdits, type WorkspaceSymbolEntry, type LspTextEdit, type StructureSymbol } from './lib/lsp'
+import type { LspCodeAction } from './lib/lsp/protocol'
 import { createGoTest, goPackageDeclarationLine, goSourceDeclarations, goTestDeclarations } from './lib/goTests'
-import { generateConstructor, generateGetters, goStructs } from './lib/goGenerate'
+import { generateConstructor, generateGetters, generateSetters, generateStructTags, goStructs, type StructTagScheme } from './lib/goGenerate'
+import { registerGoTemplates } from './lib/goTemplates'
 import { coverageRanges } from './lib/coverage'
 import { rememberProject, loadRecentProjects } from './lib/recentProjects'
 import { createShortcutMatcher, DEFAULT_SHORTCUTS, loadPreferences, loadProjectGoOverrides, savePreferences, saveProjectGoOverrides, shortcutFromKeyboardEvent, type GoPreferences, type Preferences, type RunConfiguration, type ShortcutAction } from './lib/preferences'
@@ -42,11 +44,12 @@ import { Dialogs } from './app/ui/Dialogs'
 import { ContextMenus } from './app/ui/ContextMenus'
 import { Palette } from './app/ui/Palette'
 import { RunConfigDialog } from './app/ui/RunConfigDialog'
+import type { UsageItem } from './app/ui/UsagesPane'
 import { useNavigation, type OpenFileFn } from './app/hooks/useNavigation'
 import { useLsp } from './app/hooks/useLsp'
 import { useGit } from './app/hooks/useGit'
 import { useTasks } from './app/hooks/useTasks'
-import { useDebugger } from './app/hooks/useDebugger'
+import { useDebugger, type BreakpointSpec } from './app/hooks/useDebugger'
 
 /** Parse `KEY=VALUE` lines from a saved run configuration into env vars. */
 function parseEnvVars(text: string | null | undefined): Record<string, string> | undefined {
@@ -81,6 +84,7 @@ function runConfigurationToOptions(config: RunConfiguration): TaskOptions {
     envVars: parseEnvVars(config.envVars),
     buildTags: config.buildTags || undefined,
     race: config.race || undefined,
+    ...(config.kind === 'bench' ? { bench: config.benchPattern || '.' } : {}),
   }
 }
 
@@ -216,6 +220,22 @@ function App() {
   })
   const breakpointsRef = useRef(breakpoints)
   breakpointsRef.current = breakpoints
+  /** Per-breakpoint condition/logMessage specs (GoLand breakpoint properties). */
+  const [breakpointSpecs, setBreakpointSpecs] = useState<Record<string, Record<number, BreakpointSpec>>>(() => {
+    try { return JSON.parse(localStorage.getItem('mgland.breakpointSpecs') ?? '{}') as Record<string, Record<number, BreakpointSpec>> } catch { return {} }
+  })
+  const breakpointSpecsRef = useRef(breakpointSpecs)
+  breakpointSpecsRef.current = breakpointSpecs
+  const [breakpointEdit, setBreakpointEdit] = useState<{ path: string; line: number; condition: string; logMessage: string } | null>(null)
+  const [mdPreviewOpen, setMdPreviewOpen] = useState(false)
+  const [structureSymbols, setStructureSymbols] = useState<StructureSymbol[]>([])
+  const [structureLoading, setStructureLoading] = useState(false)
+  const [usages, setUsages] = useState<{ identifier: string; items: UsageItem[] } | null>(null)
+  const [usagesBusy, setUsagesBusy] = useState(false)
+  const [intentionItems, setIntentionItems] = useState<LspCodeAction[]>([])
+  const [lineJumpOpen, setLineJumpOpen] = useState(false)
+  const [lineJumpDraft, setLineJumpDraft] = useState('')
+  const lineJumpInputRef = useRef<HTMLInputElement | null>(null)
   const [bookmarks, setBookmarks] = useState<Record<string, number[]>>(() => {
     try { return JSON.parse(localStorage.getItem('mgland.bookmarks') ?? '{}') as Record<string, number[]> } catch { return {} }
   })
@@ -252,6 +272,10 @@ function App() {
   useEffect(() => {
     try { localStorage.setItem('mgland.breakpoints', JSON.stringify(breakpoints)) } catch { /* storage full */ }
   }, [breakpoints])
+
+  useEffect(() => {
+    try { localStorage.setItem('mgland.breakpointSpecs', JSON.stringify(breakpointSpecs)) } catch { /* storage full */ }
+  }, [breakpointSpecs])
 
   useEffect(() => {
     try { localStorage.setItem('mgland.bookmarks', JSON.stringify(bookmarks)) } catch { /* storage full */ }
@@ -379,11 +403,20 @@ function App() {
         continue
       }
       if (open) continue
+      let disk: string
+      let existed = true
       try {
-        const disk = await command<string>('read_file', { path })
+        disk = await command<string>('read_file', { path })
+      } catch {
+        // A code action may create a brand-new file (gopls source.addTest);
+        // its edits start from empty content.
+        disk = ''
+        existed = false
+      }
+      try {
         const next = applyTextEdits(disk, edits)
         if (next === disk) continue
-        await command('write_file', { path, content: next, expectedContent: disk })
+        await command('write_file', { path, content: next, expectedContent: existed ? disk : null })
         if (path.endsWith('.go')) void lspRef.current?.openDocument(path, next).catch(() => undefined)
       } catch (cause) {
         notify(formatError(cause), 'error')
@@ -636,7 +669,7 @@ function App() {
   const saveFileRef = useRef<((path: string) => Promise<boolean>) | null>(null)
   const {
     output, setOutput, testResults, testOutput, testOutputByCase, coverageProfile,
-    runningTask, lastTestOptionsRef, runTask, runSelection, reset: resetTasks,
+    runningTask, lastTestOptionsRef, runTask, runTaskAwaiting, runSelection, reset: resetTasks,
   } = useTasks({
     root, rootRef, tabsRef, workspaceGenerationRef, localeRef,
     saveBeforeRun: preferences.run.saveBeforeRun, saveFileRef,
@@ -646,10 +679,11 @@ function App() {
   })
   const {
     debugState, debugFrames, debugSelectedFrameIndex, selectFrame: hookSelectFrame,
-    debugVariables, debugCurrentThreadId, debugConsole, debugLocation,
+    debugVariables, debugCurrentThreadId, debugConsole, debugLocation, debugThreads,
+    debugWatches, addWatch, removeWatch, evaluateRepl, selectThread,
     startDebug, debugControl, syncBreakpoints, expandVariable, resetDebugger,
   } = useDebugger({
-    root, rootRef, breakpointsRef, setPanelOpen, setPanelView,
+    root, rootRef, breakpointsRef, breakpointSpecsRef, setPanelOpen, setPanelView,
     notify, formatError, t,
   })
 
@@ -1243,8 +1277,19 @@ function App() {
 
   const toggleBreakpoint = useCallback((path: string, line: number) => {
     const current = breakpointsRef.current[path] ?? []
-    const next = current.includes(line) ? current.filter((item) => item !== line) : [...current, line].sort((a, b) => a - b)
-    persistBreakpoints({ ...breakpointsRef.current, [path]: next })
+    if (current.includes(line)) {
+      persistBreakpoints({ ...breakpointsRef.current, [path]: current.filter((item) => item !== line) })
+      // Drop any condition/logMessage spec attached to the removed breakpoint.
+      setBreakpointSpecs((currentSpecs) => {
+        const fileSpecs = { ...(currentSpecs[path] ?? {}) }
+        delete fileSpecs[line]
+        const next = { ...currentSpecs, [path]: fileSpecs }
+        breakpointSpecsRef.current = next
+        return next
+      })
+    } else {
+      persistBreakpoints({ ...breakpointsRef.current, [path]: [...current, line].sort((a, b) => a - b) })
+    }
   }, [persistBreakpoints])
 
   const toggleBookmark = useCallback((path: string, line: number) => {
@@ -1290,7 +1335,8 @@ function App() {
   const selectRunConfiguration = useCallback((id: string) => {
     const config = preferences.run.runConfigurations.find((item) => item.id === id)
     if (!config) return
-    setRunConfig(config.kind)
+    // Bench configurations run as `go test` with a -bench extra.
+    setRunConfig(config.kind === 'bench' ? 'test' : config.kind)
     setRunOptions(runConfigurationToOptions(config))
     setPreferences(savePreferences({ ...preferences, run: { ...preferences.run, selectedRunConfigurationId: id } }))
   }, [preferences, setRunConfig, setRunOptions])
@@ -1651,6 +1697,273 @@ function App() {
     } catch (cause) { notify(formatError(cause), 'error') }
   }, [applyExternalContent, formatError, lspState, notify])
 
+  /** Run a gopls refactoring (extract/inline) at the cursor. */
+  const runRefactor = useCallback(async (kinds: string[], prefer?: RegExp) => {
+    const path = activePathRef.current
+    const editor = editorRef.current
+    const position = editor?.getPosition()
+    if (!path?.endsWith('.go') || !editor || !position || editor.getModel()?.uri.toString() !== fileUri(path)) {
+      notify(localeRef.current === 'zh-CN' ? '请先把光标放在 Go 代码上。' : 'Place the cursor in Go code first.', 'error')
+      return
+    }
+    if (lspState !== 'ready' || !lspRef.current) {
+      notify(t('gopls 尚未就绪，无法运行重构。'), 'error')
+      return
+    }
+    try {
+      const selection = editor.getSelection()
+      const tryQuery = async (startLine: number, startCol: number, endLine: number, endCol: number) => {
+        const actions = await lspRef.current!.codeActionsAtCursor(path, startLine, startCol, kinds, endLine, endCol)
+        return actions.filter((action) => {
+          const actionKind = action.kind
+          return !!actionKind && kinds.some((kind) => actionKind === kind || actionKind.startsWith(`${kind}.`))
+        })
+      }
+      // gopls only offers extract refactorings for a real range that starts on
+      // the expression, so with a bare cursor walk the enclosing AST ranges
+      // (gopls selectionRange chain) until one yields an action.
+      let matching = selection && !selection.isEmpty()
+        ? await tryQuery(selection.startLineNumber, selection.startColumn, selection.endLineNumber, selection.endColumn)
+        : []
+      if (!matching.length) {
+        const chain = await lspRef.current!.selectionRanges(path, position.lineNumber, position.column)
+        for (const range of chain) {
+          matching = await tryQuery(range.start.line + 1, range.start.character + 1, range.end.line + 1, range.end.character + 1)
+          if (matching.length) break
+        }
+      }
+      if (!matching.length) {
+        notify(t('光标处没有可用的重构。'), 'error')
+        return
+      }
+      // gopls serves "Extract variable" and "Extract constant" under the same
+      // refactor.extract.constant kind; prefer the requested title when given.
+      const chosen = (prefer && matching.find((action) => prefer.test(action.title))) ?? matching[0]
+      await lspRef.current.applyCodeAction(chosen)
+      notify(t('已应用重构：{name}', { name: chosen.title }))
+    } catch (cause) { notify(formatError(cause), 'error') }
+  }, [formatError, lspState, notify, t])
+
+  /** GoLand ⌥⌘B: open the implementation of the symbol under the cursor. */
+  const goToImplementationNow = useCallback(async () => {
+    const path = activePathRef.current
+    const editor = editorRef.current
+    const position = editor?.getPosition()
+    if (!path || !editor || !position || lspState !== 'ready' || !lspRef.current) {
+      notify(t('gopls 尚未就绪，无法跳转实现。'), 'error')
+      return
+    }
+    const source = captureEditorLocation()
+    if (!source || source.path !== path) return
+    const request = navigationRequestRef.current
+    try {
+      const target = await lspRef.current.goToImplementation(path, position.lineNumber, position.column)
+      if (request !== navigationRequestRef.current || activePathRef.current !== path) return
+      if (!target) { notify(t('未找到实现。'), 'error'); return }
+      await navigateTo(target, source)
+    } catch (cause) { notify(formatError(cause), 'error') }
+  }, [captureEditorLocation, formatError, lspState, navigateTo, navigationRequestRef, notify, t])
+
+  /** ⇧⌘T: jump between a function and its test (GoLand Go to Test). */
+  const goToTestNow = useCallback(async () => {
+    const path = activePathRef.current
+    const editor = editorRef.current
+    const model = editor?.getModel()
+    const position = editor?.getPosition()
+    if (!path?.endsWith('.go') || !editor || !model) return
+    const line = position?.lineNumber
+    if (path.endsWith('_test.go')) {
+      const sourcePath = `${path.slice(0, -8)}.go`
+      let source = tabsRef.current.find((file) => file.path === sourcePath)?.content ?? null
+      if (source === null) {
+        source = await command<string>('read_file', { path: sourcePath }).catch(() => null)
+      }
+      if (source === null) { notify(t('未找到对应的源码文件。'), 'error'); return }
+      const testName = line ? goTestDeclarations(model.getValue()).find((item) => item.startLine <= line && line <= item.endLine)?.name : undefined
+      const baseName = testName?.replace(/^Test/, '') ?? ''
+      const declaration = baseName ? goSourceDeclarations(source).find((item) => item.name === baseName) : undefined
+      await navigateTo({ path: sourcePath, line: declaration?.startLine ?? 1, column: 1 }, captureEditorLocation())
+      return
+    }
+    const testName = line ? goSourceDeclarations(model.getValue()).find((item) => item.startLine <= line && line <= item.endLine)?.testName : undefined
+    if (!testName) { notify(t('光标处没有函数。'), 'error'); return }
+    const testPath = `${path.slice(0, -3)}_test.go`
+    let testSource = tabsRef.current.find((file) => file.path === testPath)?.content ?? null
+    if (testSource === null) {
+      testSource = await command<string>('read_file', { path: testPath }).catch(() => null)
+    }
+    if (testSource === null) {
+      notify(t('还没有测试文件，正在生成…'))
+      createTestFromEditorRef.current?.(line)
+      return
+    }
+    const declaration = goTestDeclarations(testSource).find((item) => item.name === testName)
+      ?? goTestDeclarations(testSource).find((item) => item.name.startsWith(`${testName}/`))
+    await navigateTo({ path: testPath, line: declaration?.startLine ?? 1, column: 1 }, captureEditorLocation())
+  }, [captureEditorLocation, navigateTo, notify, t])
+
+  /** ⌥F7: Find Usages into the bottom tool window. */
+  const runFindUsages = useCallback(async () => {
+    const path = activePathRef.current
+    const editor = editorRef.current
+    const model = editor?.getModel()
+    const position = editor?.getPosition()
+    if (!editor || !model || !position || !path) return
+    const word = model.getWordAtPosition(position)
+    if (!word) { notify(t('光标处没有可查找的符号。'), 'error'); return }
+    if (lspState !== 'ready' || !lspRef.current) {
+      notify(t('gopls 尚未就绪，无法查找用法。'), 'error')
+      return
+    }
+    setPanelView('usages')
+    setPanelOpen(true)
+    setUsages({ identifier: word.word, items: [] })
+    setUsagesBusy(true)
+    try {
+      const items = await lspRef.current.findUsages(path, position.lineNumber, position.column)
+      setUsages({ identifier: word.word, items })
+    } catch (cause) {
+      setUsages({ identifier: word.word, items: [] })
+      notify(formatError(cause), 'error')
+    } finally { setUsagesBusy(false) }
+  }, [formatError, lspState, notify, t])
+
+  /** One Generate-menu entry: constructor/getter/setter insert, struct tags rewrite, tests. */
+  const runGenerate = useCallback((kind: 'constructor' | 'getter' | 'setter' | 'tag-json' | 'tag-yaml' | 'tag-db' | 'test', structName?: string) => {
+    const editor = editorRef.current
+    const path = activePathRef.current
+    const model = editor?.getModel()
+    if (!editor || !model || !path?.endsWith('.go')) { notify(t('光标处没有可生成的代码。'), 'error'); return }
+    if (kind === 'test') { createTestFromEditorRef.current?.(); return }
+    const source = model.getValue()
+    const structs = goStructs(source)
+    if (!structName) {
+      if (structs.length === 1) { runGenerate(kind, structs[0].name); return }
+      notify(t('当前文件没有可操作的 struct。'), 'error')
+      return
+    }
+    if (kind === 'tag-json' || kind === 'tag-yaml' || kind === 'tag-db') {
+      const scheme: StructTagScheme = kind === 'tag-json' ? 'json' : kind === 'tag-yaml' ? 'yaml' : 'db'
+      const result = generateStructTags(source, structName, scheme)
+      if (!result || result.nextContent === source) { notify(t('没有可标注的字段。'), 'error'); return }
+      applyExternalContent(path, result.nextContent)
+      const next = tabsRef.current.map((item) => item.path === path ? { ...item, content: result.nextContent } : item)
+      tabsRef.current = next
+      setTabs(next)
+      if (localEditHistoryRef.current.record(path, source, result.nextContent)) setLocalHistoryRevision((value) => value + 1)
+      void lspRef.current?.changeDocument(path, result.nextContent).catch(() => undefined)
+      return
+    }
+    const generator = kind === 'constructor'
+      ? (text: string) => generateConstructor(text, structName)
+      : kind === 'getter'
+        ? (text: string) => generateGetters(text, structName)
+        : (text: string) => generateSetters(text, structName)
+    insertGenerated(editor, generator)
+    notify(t('已生成 {label}', { label: structName }))
+  }, [applyExternalContent, notify, t])
+
+  /** Code Cleanup: organize imports + reformat every open Go file, then save. */
+  const codeCleanup = useCallback(async () => {
+    const client = lspRef.current
+    if (lspState !== 'ready' || !client) { notify(t('gopls 尚未就绪，无法代码清理。'), 'error'); return }
+    const targets = tabsRef.current.filter((file) => file.path.endsWith('.go') && !file.readOnly && !file.binary)
+    if (!targets.length) { notify(t('没有可清理的 Go 文件。')); return }
+    let changed = 0
+    const updates = new Map<string, string>()
+    for (const file of targets) {
+      let content = file.content
+      const organized = await client.organizeImports(file.path, content).catch(() => null)
+      if (organized !== null) content = organized
+      const formatted = await client.formatDocument(file.path, content, {
+        tabSize: activeIndentOptions.tabSize, insertSpaces: activeIndentOptions.insertSpaces,
+      }).catch(() => null)
+      if (formatted !== null) content = formatted
+      if (content !== file.content) { updates.set(file.path, content); changed += 1 }
+    }
+    if (updates.size) {
+      for (const [path, content] of updates) applyExternalContent(path, content)
+      const next = tabsRef.current.map((item) => updates.has(item.path) ? { ...item, content: updates.get(item.path)! } : item)
+      tabsRef.current = next
+      setTabs(next)
+      let historyChanged = false
+      for (const [path, content] of updates) {
+        if (localEditHistoryRef.current.ensureFile(path, content)) historyChanged = true
+      }
+      if (historyChanged) setLocalHistoryRevision((value) => value + 1)
+      for (const [path, content] of updates) {
+        if (path.endsWith('.go')) void lspRef.current?.changeDocument(path, content).catch(() => undefined)
+      }
+    }
+    for (const file of targets) await saveFile(file.path)
+    notify(changed ? t('代码清理完成，更新了 {count} 个文件。', { count: changed }) : t('代码清理完成'))
+  }, [activeIndentOptions, applyExternalContent, lspState, notify, saveFile, t])
+
+  /** Save the breakpoint condition/logMessage dialog back to the spec map. */
+  const saveBreakpointEdit = useCallback(() => {
+    if (!breakpointEdit) return
+    const condition = breakpointEdit.condition.trim()
+    const logMessage = breakpointEdit.logMessage.trim()
+    setBreakpointSpecs((current) => {
+      const fileSpecs = { ...(current[breakpointEdit.path] ?? {}) }
+      if (condition || logMessage) fileSpecs[breakpointEdit.line] = { ...(condition ? { condition } : {}), ...(logMessage ? { logMessage } : {}) }
+      else delete fileSpecs[breakpointEdit.line]
+      const next = { ...current, [breakpointEdit.path]: fileSpecs }
+      breakpointSpecsRef.current = next
+      return next
+    })
+    const edited = breakpointEdit
+    setBreakpointEdit(null)
+    void syncBreakpoints(edited.path, breakpointsRef.current[edited.path] ?? [])
+  }, [breakpointEdit, syncBreakpoints])
+
+  const submitLineJump = useCallback(() => {
+    const match = /^(\d+)(?::(\d+))?$/.exec(lineJumpDraft.trim())
+    if (match && activePathRef.current) {
+      void navigateTo({ path: activePathRef.current, line: Number(match[1]), column: match[2] ? Number(match[2]) : 1 }, null)
+    }
+    setLineJumpOpen(false)
+    setLineJumpDraft('')
+  }, [lineJumpDraft, navigateTo])
+
+  useEffect(() => {
+    if (lineJumpOpen) lineJumpInputRef.current?.focus()
+  }, [lineJumpOpen])
+
+  /** Structure tool window: outline of the active file via gopls. */
+  useEffect(() => {
+    if (sideView !== 'structure') return
+    const path = activePath
+    const file = tabs.find((item) => item.path === path)
+    if (!path || !file || file.binary || !path.endsWith('.go') || lspState !== 'ready' || !lspRef.current) {
+      setStructureSymbols([])
+      return
+    }
+    setStructureLoading(true)
+    const timer = window.setTimeout(() => {
+      void lspRef.current?.documentSymbols(path, file.content)
+        .then((symbols) => setStructureSymbols(symbols ?? []))
+        .catch(() => setStructureSymbols([]))
+        .finally(() => setStructureLoading(false))
+    }, 250)
+    return () => window.clearTimeout(timer)
+  }, [activeFileContent, activePath, lspState, sideView, tabs])
+
+  /** Intention palette: all code actions at the cursor, listed by title. */
+  useEffect(() => {
+    if (!paletteOpen || paletteMode !== 'intentions') { setIntentionItems([]); return }
+    const path = activePathRef.current
+    const editor = editorRef.current
+    const position = editor?.getPosition()
+    if (!path || !position || lspState !== 'ready' || !lspRef.current) return
+    const timer = window.setTimeout(() => {
+      void lspRef.current?.codeActionsAtCursor(path, position.lineNumber, position.column)
+        .then(setIntentionItems)
+        .catch(() => setIntentionItems([]))
+    }, 120)
+    return () => window.clearTimeout(timer)
+  }, [lspState, paletteMode, paletteOpen])
+
   /** Shared dispatcher for keyboard shortcuts and native menu items. */
   const runShortcutAction = useCallback((action: ShortcutAction) => {
     switch (action) {
@@ -1663,11 +1976,19 @@ function App() {
       case 'symbolSearch': openPalette('symbols'); break
       case 'toggleProject': setSideView('files'); setSidebarOpen((value) => sideView === 'files' ? !value : true); break
       case 'toggleGit': setSideView('git'); setSidebarOpen((value) => sideView === 'git' ? !value : true); if (root) void refreshGit(root, { refreshIgnored: true }); break
+      case 'toggleStructure': setSideView('structure'); setSidebarOpen((value) => sideView === 'structure' ? !value : true); break
+      case 'toggleBookmarks': setSideView('bookmarks'); setSidebarOpen((value) => sideView === 'bookmarks' ? !value : true); break
+      case 'toggleTodoPanel': setPanelView('todo'); setPanelOpen((value) => panelView === 'todo' ? !value : true); break
       case 'toggleTerminal': setPanelView('terminal'); setPanelOpen((value) => panelView === 'terminal' ? !value : true); break
       case 'toggleRun': setPanelView('output'); setPanelOpen((value) => panelView === 'output' ? !value : true); break
       case 'toggleProblems': setPanelView('problems'); setPanelOpen((value) => panelView === 'problems' ? !value : true); break
       case 'toggleDebugPanel': setPanelView('debug'); setPanelOpen((value) => panelView === 'debug' ? !value : true); break
       case 'goToDefinition': if (activePath) void goToDefinition(); break
+      case 'goToImplementation': void goToImplementationNow(); break
+      case 'goToTest': void goToTestNow(); break
+      case 'findUsages': void runFindUsages(); break
+      case 'jumpToLine': setLineJumpDraft(''); setLineJumpOpen(true); break
+      case 'generate': openPalette('generate'); break
       case 'navigateBack': void navigateHistory('back'); break
       case 'navigateForward': void navigateHistory('forward'); break
       case 'toggleBookmark': {
@@ -1678,7 +1999,15 @@ function App() {
       }
       case 'saveCurrent': if (activePathRef.current) void saveFile(activePathRef.current); break
       case 'saveAll': for (const file of tabsRef.current.filter((item) => item.content !== item.savedContent)) void saveFile(file.path); break
-      case 'run': if (!runEditorContextRef.current?.()) void runTask(runConfig, runOptions); break
+      case 'run': {
+        // GoLand before-launch chain: tidy/build first, then the main task.
+        const beforeLaunch = preferences.run.runConfigurations.find((item) => item.id === preferences.run.selectedRunConfigurationId)?.beforeLaunch ?? 'none'
+        const launch = () => { if (!runEditorContextRef.current?.()) void runTask(runConfig, runOptions) }
+        if (beforeLaunch === 'tidy') void runTaskAwaiting('mod_tidy').then((ok) => { if (ok) launch() })
+        else if (beforeLaunch === 'build') void runTaskAwaiting('build').then((ok) => { if (ok) launch() })
+        else launch()
+        break
+      }
       case 'debug': debugCurrentContext(); break
       case 'testAll': void runTask('test'); break
       case 'runWithCoverage': void runTask('test', { ...(lastTestOptionsRef.current || {}), coverage: true, label: t('覆盖率 · {name}', { name: lastTestOptionsRef.current?.label ?? 'go test ./...' }) }); break
@@ -1691,7 +2020,7 @@ function App() {
       case 'goModTidy': void runTask('mod_tidy'); break
       case 'openSettings': setSettingsSection('editor'); setSettingsOpen(true); break
     }
-  }, [activePath, debugControl, debugCurrentContext, debugState, formatCurrentFile, formatError, goToDefinition, lastTestOptionsRef, navigateHistory, notify, openPalette, panelView, refreshGit, root, runConfig, runOptions, runTask, runningTask, saveFile, setPanelOpen, setPanelView, setSettingsOpen, setSettingsSection, setSideView, setSidebarOpen, sideView, t, toggleBookmark])
+  }, [activePath, debugControl, debugCurrentContext, debugState, formatCurrentFile, formatError, goToDefinition, goToImplementationNow, goToTestNow, lastTestOptionsRef, navigateHistory, notify, openPalette, panelView, preferences.run.runConfigurations, preferences.run.selectedRunConfigurationId, refreshGit, root, runConfig, runFindUsages, runOptions, runTask, runTaskAwaiting, runningTask, saveFile, setPanelOpen, setPanelView, setSettingsOpen, setSettingsSection, setSideView, setSidebarOpen, sideView, t, toggleBookmark])
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -1720,6 +2049,9 @@ function App() {
       if (!action) return
       if (event.target instanceof Element && event.target.closest('.xterm') && action !== 'toggleTerminal') return
       event.preventDefault()
+      // Stop the event from reaching Monaco's own bindings (F3 = find next),
+      // which otherwise fire alongside the app action.
+      event.stopPropagation()
       runShortcutAction(action)
     }
     window.addEventListener('keydown', onKeyDown, true)
@@ -1736,6 +2068,7 @@ function App() {
   const beforeEditorMount = useCallback((monaco: typeof Monaco) => {
     defineMglandTheme(monaco)
     registerGoSuffixCompletions(monaco)
+    registerGoTemplates(monaco)
   }, [])
 
   const onEditorMount: OnMount = useCallback((editor, monaco) => {
@@ -1887,7 +2220,8 @@ function App() {
       precondition: 'mglandGoAnyFile',
       contextMenuGroupId: 'debug',
       contextMenuOrder: 1,
-      keybindings: [monacoApi.KeyCode.F9],
+      // F9 stays unbound here: the global shortcut already handles it, and a
+      // Monaco binding would double-fire the toggle (net zero).
       run: (_editor) => {
         const model = editor.getModel()
         const position = editor.getPosition()
@@ -1901,7 +2235,6 @@ function App() {
       label: t('切换书签'),
       contextMenuGroupId: 'navigation',
       contextMenuOrder: 4,
-      keybindings: [monacoApi.KeyCode.F3],
       run: () => {
         const model = editor.getModel()
         const position = editor.getPosition()
@@ -1924,6 +2257,59 @@ function App() {
           if (gitBlame?.path === path) setGitBlame(null)
           else void openGitBlame(path)
         }
+      },
+    })
+    const findUsagesAction = editor.addAction({
+      id: 'mgland.find-usages',
+      label: t('查找用法'),
+      precondition: 'mglandGoAnyFile',
+      contextMenuGroupId: 'navigation',
+      contextMenuOrder: 6,
+      // No editor keybinding here: the global ⌥F7 shortcut already dispatches
+      // through the preferences matcher, and a second binding fires it twice.
+      run: () => { void runFindUsages() },
+    })
+    const goToImplementationAction = editor.addAction({
+      id: 'mgland.go-to-implementation',
+      label: t('跳转到实现'),
+      precondition: 'mglandGoAnyFile',
+      contextMenuGroupId: 'navigation',
+      contextMenuOrder: 7,
+      run: () => { void goToImplementationNow() },
+    })
+    const goToTestAction = editor.addAction({
+      id: 'mgland.go-to-test',
+      label: t('转到测试（或被测代码）'),
+      precondition: 'mglandGoAnyFile',
+      contextMenuGroupId: 'navigation',
+      contextMenuOrder: 8,
+      run: () => { void goToTestNow() },
+    })
+    const generateAction = editor.addAction({
+      id: 'mgland.generate-menu',
+      label: t('Generate 生成…'),
+      precondition: 'mglandGoSourceFile || mglandGoTestFile',
+      contextMenuGroupId: 'generate',
+      contextMenuOrder: 0,
+      run: () => { openPalette('generate') },
+    })
+    const editBreakpointAction = editor.addAction({
+      id: 'mgland.edit-breakpoint',
+      label: t('编辑断点条件'),
+      precondition: 'mglandGoAnyFile',
+      contextMenuGroupId: 'debug',
+      contextMenuOrder: 2,
+      run: () => {
+        const model = editor.getModel()
+        const position = editor.getPosition()
+        if (!model || !position) return
+        const path = tabsRef.current.find((file) => fileUri(file.path) === model.uri.toString())?.path ?? uriToPath(model.uri.toString())
+        const spec = breakpointSpecsRef.current[path]?.[position.lineNumber]
+        setBreakpointEdit({
+          path, line: position.lineNumber,
+          condition: spec?.condition ?? '',
+          logMessage: spec?.logMessage ?? '',
+        })
       },
     })
     const constructorAction = editor.addAction({
@@ -1954,6 +2340,8 @@ function App() {
       methodAction.dispose(); fileAction.dispose(); historyAction.dispose()
       breakpointAction.dispose(); bookmarkAction.dispose(); blameAction.dispose()
       constructorAction.dispose(); gettersAction.dispose(); modelListener.dispose()
+      findUsagesAction.dispose(); goToImplementationAction.dispose(); goToTestAction.dispose()
+      generateAction.dispose(); editBreakpointAction.dispose()
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [monacoApi, t, gitBlame?.path, toggleBreakpoint, toggleBookmark])
@@ -2147,14 +2535,46 @@ function App() {
       action: () => void navigateTo({ path: symbol.path, line: symbol.line, column: symbol.column }),
       icon: Braces,
     }))
+    // Generate menu (⌘N): one entry per generator for the struct at the cursor.
+    const cursorStructs = goStructs(activeFileContent)
+    const targetStruct = cursorStructs.find((item) => item.startLine <= cursor.line && cursor.line <= item.endLine) ?? cursorStructs[0] ?? null
+    const generateEntries: Array<[Parameters<typeof runGenerate>[0], string]> = [
+      ['constructor', '生成构造函数'],
+      ['getter', '生成 Getter 方法'],
+      ['setter', '生成 Setter 方法'],
+      ['tag-json', '生成 JSON 标签'],
+      ['tag-yaml', '生成 YAML 标签'],
+      ['tag-db', '生成 DB 标签'],
+      ['test', '生成测试文件'],
+    ]
+    const generateItems = generateEntries.map(([kind, label]) => ({
+      label: targetStruct && kind !== 'test' ? `${label} · ${targetStruct.name}` : label,
+      hint: targetStruct && kind !== 'test' ? t('Generate') : t('需要 Go 文件'),
+      icon: Braces,
+      action: () => runGenerate(kind, targetStruct?.name),
+    }))
+    const intentionPaletteItems = intentionItems.map((action) => ({
+      label: action.title,
+      hint: action.kind ?? 'quickfix',
+      icon: Wrench,
+      action: () => {
+        const path = activePathRef.current
+        if (!path || !lspRef.current) return
+        void lspRef.current.applyCodeAction(action)
+          .then(() => notify(t('已应用：{name}', { name: action.title })))
+          .catch((cause) => notify(formatError(cause), 'error'))
+      },
+    }))
     const query = paletteQuery.trim().toLowerCase()
     const candidates = paletteMode === 'files' ? files
       : paletteMode === 'actions' ? [...actions, ...pluginItems, ...nativePluginItems]
         : paletteMode === 'symbols' ? symbolItems
           : paletteMode === 'recent' ? recentFiles
-            : [...actions, ...pluginItems, ...nativePluginItems, ...files]
+            : paletteMode === 'generate' ? generateItems
+              : paletteMode === 'intentions' ? intentionPaletteItems
+                : [...actions, ...pluginItems, ...nativePluginItems, ...files]
     return candidates.filter((item) => !query || `${item.label} ${item.hint}`.toLowerCase().includes(query)).slice(0, 60)
-  }, [chooseWorkspace, formatError, historyAvailability, locale, navigateTo, nativePluginCommands, notify, openEmptyWindow, openFile, openNewProject, paletteMode, paletteQuery, pluginActions, projectFiles, refreshGit, root, runTask, symbolResults, t])
+  }, [activeFileContent, chooseWorkspace, cursor.line, formatError, historyAvailability, intentionItems, locale, navigateTo, nativePluginCommands, notify, openEmptyWindow, openFile, openNewProject, paletteMode, paletteQuery, pluginActions, projectFiles, refreshGit, root, runGenerate, runTask, symbolResults, t])
 
   /** Reveal any workspace path in the project tree (expands ancestors, selects, scrolls). */
   const revealTreePath = useCallback((path: string) => {
@@ -2236,6 +2656,9 @@ function App() {
       case 'recent-project': if (path) void openRecentProject(path); break
       case 'view.toggle-project': runShortcutAction('toggleProject'); break
       case 'view.toggle-git': runShortcutAction('toggleGit'); break
+      case 'view.toggle-structure': runShortcutAction('toggleStructure'); break
+      case 'view.toggle-bookmarks': runShortcutAction('toggleBookmarks'); break
+      case 'view.toggle-todo': runShortcutAction('toggleTodoPanel'); break
       case 'view.toggle-terminal': runShortcutAction('toggleTerminal'); break
       case 'view.toggle-run': runShortcutAction('toggleRun'); break
       case 'view.toggle-problems': runShortcutAction('toggleProblems'); break
@@ -2244,12 +2667,23 @@ function App() {
       case 'nav.search-everywhere': runShortcutAction('searchEverywhere'); break
       case 'nav.recent-files': runShortcutAction('recentFiles'); break
       case 'nav.go-to-definition': runShortcutAction('goToDefinition'); break
+      case 'nav.go-to-implementation': runShortcutAction('goToImplementation'); break
+      case 'nav.go-to-test': runShortcutAction('goToTest'); break
+      case 'nav.find-usages': runShortcutAction('findUsages'); break
+      case 'nav.jump-to-line': runShortcutAction('jumpToLine'); break
       case 'nav.back': runShortcutAction('navigateBack'); break
       case 'nav.forward': runShortcutAction('navigateForward'); break
       case 'code.organize-imports': void organizeCurrentFile(); break
       case 'code.format': void formatCurrentFile(); break
       case 'code.quick-fix': editorRef.current?.trigger('mgland', 'editor.action.codeAction', { kind: 'quickfix' }); break
+      case 'code.run-intentions': openPalette('intentions'); break
+      case 'code.cleanup': void codeCleanup(); break
       case 'refactor.rename': editorRef.current?.trigger('source', 'editor.action.rename', undefined); break
+      case 'refactor.extract-variable': void runRefactor(['refactor.extract.variable', 'refactor.extract.constant'], /variable/i); break
+      case 'refactor.extract-constant': void runRefactor(['refactor.extract.constant'], /constant/i); break
+      case 'refactor.extract-function': void runRefactor(['refactor.extract.function', 'refactor.extract.method']); break
+      case 'refactor.inline': void runRefactor(['refactor.inline.call']); break
+      case 'refactor.extract-interface': notify(t('gopls 暂不支持提取接口。'), 'error'); break
       case 'run.run': runShortcutAction('run'); break
       case 'run.debug': runShortcutAction('debug'); break
       case 'run.coverage': runShortcutAction('runWithCoverage'); break
@@ -2299,7 +2733,10 @@ function App() {
       <nav className="activity-bar" aria-label={t('工具窗口')}>
         <button className={`activity-button ${sidebarOpen && sideView === 'files' ? 'selected' : ''}`} type="button" title={t('Project')} aria-label={t('Project')} aria-pressed={sidebarOpen && sideView === 'files'} onClick={() => { if (sidebarOpen && sideView === 'files') setSidebarOpen(false); else { setSideView('files'); setSidebarOpen(true) } }}><Folder size={20} strokeWidth={1.7} /></button>
         <button className={`activity-button ${sidebarOpen && sideView === 'git' ? 'selected' : ''}`} type="button" title="Git" aria-label="Git" aria-pressed={sidebarOpen && sideView === 'git'} onClick={() => { if (sidebarOpen && sideView === 'git') setSidebarOpen(false); else { setSideView('git'); setSidebarOpen(true); if (root) void refreshGit(root, { refreshIgnored: true }) } }}><GitBranch size={19} strokeWidth={1.7} /></button>
+        <button className={`activity-button ${sidebarOpen && sideView === 'structure' ? 'selected' : ''}`} type="button" title={t('结构')} aria-label={t('结构')} aria-pressed={sidebarOpen && sideView === 'structure'} onClick={() => { if (sidebarOpen && sideView === 'structure') setSidebarOpen(false); else { setSideView('structure'); setSidebarOpen(true) } }}><ListTree size={19} strokeWidth={1.7} /></button>
+        <button className={`activity-button ${sidebarOpen && sideView === 'bookmarks' ? 'selected' : ''}`} type="button" title={t('书签')} aria-label={t('书签')} aria-pressed={sidebarOpen && sideView === 'bookmarks'} onClick={() => { if (sidebarOpen && sideView === 'bookmarks') setSidebarOpen(false); else { setSideView('bookmarks'); setSidebarOpen(true) } }}><Bookmark size={19} strokeWidth={1.7} /></button>
         <div className="activity-spacer" />
+        <button className={`activity-button ${panelOpen && panelView === 'todo' ? 'selected' : ''}`} type="button" title="TODO" aria-label="TODO" onClick={() => { setPanelView('todo'); setPanelOpen((value) => panelView === 'todo' ? !value : true) }}><Braces size={19} strokeWidth={1.7} /></button>
         <button className={`activity-button ${panelOpen && panelView === 'output' ? 'selected' : ''}`} type="button" title={t('Run')} aria-label={t('Run')} onClick={() => { setPanelView('output'); setPanelOpen((value) => panelView === 'output' ? !value : true) }}><Play size={19} /></button>
         <button className={`activity-button ${panelOpen && panelView === 'tests' ? 'selected' : ''}`} type="button" title={t('Test')} aria-label={t('Test')} onClick={() => { setPanelView('tests'); setPanelOpen((value) => panelView === 'tests' ? !value : true) }}><FlaskConical size={19} /></button>
         <button className={`activity-button ${panelOpen && panelView === 'terminal' ? 'selected' : ''}`} type="button" title={t('Terminal')} aria-label={t('Terminal')} onClick={() => { setPanelView('terminal'); setPanelOpen((value) => panelView === 'terminal' ? !value : true) }}><TerminalSquare size={19} /></button>
@@ -2324,6 +2761,8 @@ function App() {
         gitStashPush={gitStashPush} gitStashPop={gitStashPop} gitStashDrop={gitStashDrop}
         recentProjects={recentProjects} openRecentProject={openRecentProject}
         goMod={goMod} goSdkVersion={/go\d+\.\d+(?:\.\d+)?/.exec(versions?.go ?? '')?.[0]?.replace(/^go/, '') ?? null}
+        structureSymbols={structureSymbols} structureLoading={structureLoading}
+        bookmarks={bookmarks} removeBookmark={toggleBookmark} navigateTo={navigateTo}
       />}
       <EditorArea
         t={t} locale={locale} root={root} tabs={tabs} activePath={activePath} activeFile={activeFile}
@@ -2339,6 +2778,7 @@ function App() {
         setPanelView={setPanelView} setPanelOpen={setPanelOpen}
         splitPath={splitPath} setSplitPath={setSplitPath} theme={monacoTheme}
         lineNumbersFormatter={lineNumbersFormatter}
+        mdPreviewOpen={mdPreviewOpen} setMdPreviewOpen={setMdPreviewOpen}
       >
       <BottomPanel
         t={t} locale={locale} root={root} panelOpen={panelOpen} setPanelOpen={setPanelOpen}
@@ -2358,6 +2798,10 @@ function App() {
         debugState={debugState} debugFrames={debugFrames} debugSelectedFrameIndex={debugSelectedFrameIndex}
         debugSelectFrame={hookSelectFrame} debugVariables={debugVariables} debugExpandVariable={expandVariable}
         debugConsole={debugConsole} debugControl={debugControl} debugCurrentThreadId={debugCurrentThreadId}
+        debugThreads={debugThreads} debugSelectThread={selectThread}
+        debugWatches={debugWatches} debugAddWatch={addWatch} debugRemoveWatch={removeWatch}
+        debugEvaluateRepl={evaluateRepl}
+        usages={usages} usagesBusy={usagesBusy}
         dlvInstalled={!!versions?.dlv} installDlv={() => void runTask('install_dlv')}
         startDebug={debugCurrentContext}
         gitGraph={gitGraph} gitGraphLoading={gitGraphLoading} refreshGitGraph={openGitGraph}
@@ -2432,6 +2876,46 @@ function App() {
         setPreferences(savePreferences(next))
       }
     }} locale={locale} onLocaleChange={setLocale} initialSection={settingsSection} versions={versions} lspState={lspState} onInstallGopls={() => void runTask('install_gopls')} onRestartGopls={() => setLspEpoch((value) => value + 1)} goToolBusy={!!runningTask} onInstallTool={(task) => void runTask(task)} pluginManager={{ projectRoot: root, busy: !!runningTask, onRunGoTask: runTask, onOpenFile: openFile, nativePlugins, onNativePluginsChanged: refreshNativePlugins }} onClose={() => setSettingsOpen(false)} goScope={goScope} onGoScopeChange={setGoScope} hasProject={!!root} projectOverrideCount={Object.keys(projectGoOverrides).length} onClearProjectGoOverrides={() => { if (root) { saveProjectGoOverrides(root, {}); setProjectGoOverrides({}) } }} onOpenStyleFile={() => void openStyleFile()} />}
+    {lineJumpOpen && <div className="overlay-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) setLineJumpOpen(false) }}>
+      <form className="line-jump-dialog" role="dialog" aria-modal="true" aria-label={t('跳转到行:列')} onSubmit={(event) => { event.preventDefault(); submitLineJump() }}>
+        <label htmlFor="mg-line-jump-input">{t('跳转到行:列')}</label>
+        <input
+          id="mg-line-jump-input"
+          ref={lineJumpInputRef}
+          value={lineJumpDraft}
+          placeholder="120:8"
+          autoComplete="off"
+          onChange={(event) => setLineJumpDraft(event.target.value)}
+          onKeyDown={(event) => { if (event.key === 'Escape') setLineJumpOpen(false) }}
+        />
+        <div className="dialog-actions"><button type="button" onClick={() => setLineJumpOpen(false)}>{t('取消')}</button><button type="submit" className="primary">{t('跳转')}</button></div>
+      </form>
+    </div>}
+    {breakpointEdit && <div className="overlay-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) setBreakpointEdit(null) }}>
+      <form className="line-jump-dialog" role="dialog" aria-modal="true" aria-label={t('编辑断点条件')} onSubmit={(event) => { event.preventDefault(); saveBreakpointEdit() }}>
+        <label htmlFor="mg-bp-condition">{t('断点条件')} · {displayName(breakpointEdit.path)}:{breakpointEdit.line}</label>
+        <input
+          id="mg-bp-condition"
+          value={breakpointEdit.condition}
+          placeholder={t('表达式为真时中断，如 count > 10')}
+          autoComplete="off"
+          onChange={(event) => setBreakpointEdit({ ...breakpointEdit, condition: event.target.value })}
+        />
+        <label htmlFor="mg-bp-log" style={{ marginTop: 10 }}>{t('日志消息（命中时记录而不暂停）')}</label>
+        <input
+          id="mg-bp-log"
+          value={breakpointEdit.logMessage}
+          placeholder={t('支持 {expr} 插值，如 count={count}')}
+          autoComplete="off"
+          onChange={(event) => setBreakpointEdit({ ...breakpointEdit, logMessage: event.target.value })}
+        />
+        <div className="dialog-actions">
+          <button type="button" onClick={() => { toggleBreakpoint(breakpointEdit.path, breakpointEdit.line); setBreakpointEdit(null) }}>{t('移除断点')}</button>
+          <button type="button" onClick={() => setBreakpointEdit(null)}>{t('取消')}</button>
+          <button type="submit" className="primary">{t('保存断点')}</button>
+        </div>
+      </form>
+    </div>}
     {toast && <div className={`toast ${toast.kind}`} role="status">{toast.kind === 'success' ? <Check size={16} /> : <CircleHelp size={16} />}<span>{toast.text}</span><button type="button" aria-label={t('关闭提示')} onClick={() => setToast(null)}><X size={14} /></button></div>}
     {!desktopAvailable && <div className="browser-hint"><AlertCircle size={15} />{t('当前为浏览器预览。本机开发功能请使用 {command}。', { command: 'npm run tauri dev' })}</div>}
   </div>

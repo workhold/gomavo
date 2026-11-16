@@ -532,7 +532,9 @@ fn rebuild_app_menu(app: &AppHandle) -> tauri::Result<()> {
         menu.insert(&app_menu, 0)?;
     }
 
-    let new_window = MenuItem::with_id(app, NEW_WINDOW_MENU_ID, t("新窗口", "New Window"), true, Some("CmdOrCtrl+N"))?;
+    // No ⌘N accelerator: GoLand binds ⌘N to Generate in the editor; the menu
+    // item stays reachable from 文件.
+    let new_window = MenuItem::with_id(app, NEW_WINDOW_MENU_ID, t("新窗口", "New Window"), true, None::<&str>)?;
     let new_go_file = MenuItem::with_id(app, "file.new-go-file", t("Go 文件", "Go File"), true, None::<&str>)?;
     let new_project = MenuItem::with_id(app, NEW_PROJECT_MENU_ID, t("项目…", "Project…"), true, None::<&str>)?;
     let new = Submenu::with_items(app, &t("新建", "New"), true, &[&new_go_file, &new_project])?;
@@ -594,16 +596,19 @@ fn rebuild_app_menu(app: &AppHandle) -> tauri::Result<()> {
 
     let toggle_project = MenuItem::with_id(app, "view.toggle-project", t("Project 项目", "Project"), true, None::<&str>)?;
     let toggle_git = MenuItem::with_id(app, "view.toggle-git", t("Git", "Git"), true, None::<&str>)?;
+    let toggle_structure = MenuItem::with_id(app, "view.toggle-structure", t("Structure 结构", "Structure"), true, None::<&str>)?;
+    let toggle_bookmarks = MenuItem::with_id(app, "view.toggle-bookmarks", t("书签 Bookmarks", "Bookmarks"), true, None::<&str>)?;
     let toggle_terminal = MenuItem::with_id(app, "view.toggle-terminal", t("终端 Terminal", "Terminal"), true, None::<&str>)?;
     let toggle_run = MenuItem::with_id(app, "view.toggle-run", t("运行 Run", "Run"), true, None::<&str>)?;
     let toggle_problems = MenuItem::with_id(app, "view.toggle-problems", t("问题 Problems", "Problems"), true, None::<&str>)?;
     let toggle_debug = MenuItem::with_id(app, "view.toggle-debug", t("调试 Debug", "Debug"), true, None::<&str>)?;
     let toggle_search = MenuItem::with_id(app, "view.toggle-search", t("搜索 Search", "Search"), true, None::<&str>)?;
+    let toggle_todo = MenuItem::with_id(app, "view.toggle-todo", t("TODO", "TODO"), true, None::<&str>)?;
     let tool_windows = Submenu::with_items(
         app,
         &t("工具窗口", "Tool Windows"),
         true,
-        &[&toggle_project, &toggle_git, &toggle_terminal, &toggle_run, &toggle_problems, &toggle_debug, &toggle_search],
+        &[&toggle_project, &toggle_git, &toggle_structure, &toggle_bookmarks, &toggle_terminal, &toggle_run, &toggle_problems, &toggle_debug, &toggle_search, &toggle_todo],
     )?;
     let view = Submenu::with_items(app, &t("视图", "View"), true, &[&tool_windows])?;
     menu.insert(&view, 3)?;
@@ -611,29 +616,45 @@ fn rebuild_app_menu(app: &AppHandle) -> tauri::Result<()> {
     let search_everywhere = MenuItem::with_id(app, "nav.search-everywhere", t("搜索所有内容", "Search Everywhere"), true, None::<&str>)?;
     let recent_files = MenuItem::with_id(app, "nav.recent-files", t("最近文件", "Recent Files"), true, None::<&str>)?;
     let goto_definition = MenuItem::with_id(app, "nav.go-to-definition", t("跳转定义", "Go to Definition"), true, None::<&str>)?;
+    let goto_implementation = MenuItem::with_id(app, "nav.go-to-implementation", t("跳转实现", "Go to Implementation"), true, None::<&str>)?;
+    let goto_test = MenuItem::with_id(app, "nav.go-to-test", t("转到测试（或被测代码）", "Go to Test (or Tested Code)"), true, None::<&str>)?;
+    let find_usages = MenuItem::with_id(app, "nav.find-usages", t("查找用法", "Find Usages"), true, None::<&str>)?;
+    let jump_to_line = MenuItem::with_id(app, "nav.jump-to-line", t("行:列…", "Line:Column…"), true, None::<&str>)?;
     let nav_back = MenuItem::with_id(app, "nav.back", t("后退", "Back"), true, None::<&str>)?;
     let nav_forward = MenuItem::with_id(app, "nav.forward", t("前进", "Forward"), true, None::<&str>)?;
     let navigate = Submenu::with_items(
         app,
         &t("导航", "Navigate"),
         true,
-        &[&search_everywhere, &recent_files, &PredefinedMenuItem::separator(app)?, &goto_definition, &PredefinedMenuItem::separator(app)?, &nav_back, &nav_forward],
+        &[&search_everywhere, &recent_files, &PredefinedMenuItem::separator(app)?, &goto_definition, &goto_implementation, &goto_test, &find_usages, &jump_to_line, &PredefinedMenuItem::separator(app)?, &nav_back, &nav_forward],
     )?;
     menu.insert(&navigate, 4)?;
 
     let organize_imports = MenuItem::with_id(app, "code.organize-imports", t("整理 Imports", "Optimize Imports"), true, Some("Ctrl+Alt+O"))?;
     let reformat = MenuItem::with_id(app, "code.format", t("重新格式化代码", "Reformat Code"), true, None::<&str>)?;
     let quick_fix = MenuItem::with_id(app, "code.quick-fix", t("快速修复", "Quick Fix"), true, None::<&str>)?;
+    let run_intentions = MenuItem::with_id(app, "code.run-intentions", t("运行意图…", "Run Intention…"), true, Some("Meta+Alt+Shift+I"))?;
+    let code_cleanup = MenuItem::with_id(app, "code.cleanup", t("代码清理", "Code Cleanup"), true, Some("Ctrl+Alt+Shift+L"))?;
     let code = Submenu::with_items(
         app,
         &t("代码", "Code"),
         true,
-        &[&organize_imports, &reformat, &quick_fix],
+        &[&organize_imports, &reformat, &quick_fix, &PredefinedMenuItem::separator(app)?, &run_intentions, &code_cleanup],
     )?;
     menu.insert(&code, 5)?;
 
     let rename = MenuItem::with_id(app, "refactor.rename", t("重命名", "Rename"), true, Some("Shift+F6"))?;
-    let refactor = Submenu::with_items(app, &t("重构", "Refactor"), true, &[&rename])?;
+    let extract_variable = MenuItem::with_id(app, "refactor.extract-variable", t("提取变量", "Extract Variable"), true, Some("Alt+Meta+V"))?;
+    let extract_constant = MenuItem::with_id(app, "refactor.extract-constant", t("提取常量", "Extract Constant"), true, Some("Alt+Meta+C"))?;
+    let extract_function = MenuItem::with_id(app, "refactor.extract-function", t("提取函数", "Extract Function"), true, Some("Alt+Meta+M"))?;
+    let extract_interface = MenuItem::with_id(app, "refactor.extract-interface", t("提取接口", "Extract Interface"), true, Some("Alt+Meta+I"))?;
+    let inline = MenuItem::with_id(app, "refactor.inline", t("内联", "Inline"), true, Some("Alt+Meta+N"))?;
+    let refactor = Submenu::with_items(
+        app,
+        &t("重构", "Refactor"),
+        true,
+        &[&rename, &PredefinedMenuItem::separator(app)?, &extract_variable, &extract_constant, &extract_function, &extract_interface, &PredefinedMenuItem::separator(app)?, &inline],
+    )?;
     menu.insert(&refactor, 6)?;
 
     let run = MenuItem::with_id(app, "run.run", t("运行", "Run"), true, None::<&str>)?;

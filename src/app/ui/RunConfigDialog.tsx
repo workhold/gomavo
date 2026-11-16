@@ -26,6 +26,8 @@ function emptyConfiguration(): RunConfiguration {
     envVars: '',
     buildTags: '',
     race: false,
+    beforeLaunch: 'none',
+    benchPattern: '',
   }
 }
 
@@ -73,7 +75,7 @@ export function RunConfigDialog(props: RunConfigDialogProps) {
           <div className="run-config-row">
             <label>
               <span>{label('类型', 'Kind')}</span>
-              <Dropdown ariaLabel={label('类型', 'Kind')} value={selected.kind} options={[{ value: 'run', label: 'go run' }, { value: 'test', label: 'go test' }, { value: 'build', label: 'go build' }]} onChange={(kind) => update({ kind })} />
+              <Dropdown ariaLabel={label('类型', 'Kind')} value={selected.kind} options={[{ value: 'run', label: 'go run' }, { value: 'test', label: 'go test' }, { value: 'bench', label: 'go test -bench' }, { value: 'build', label: 'go build' }]} onChange={(kind) => update({ kind })} />
             </label>
             <label>
               <span>{label('作用域', 'Scope')}</span>
@@ -100,10 +102,22 @@ export function RunConfigDialog(props: RunConfigDialogProps) {
             <span>{label('测试名称（可选）', 'Test name (optional)')}</span>
             <input value={selected.testName ?? ''} placeholder="TestFoo" onChange={(event) => update({ testName: event.target.value || null })} />
           </label>}
+          {selected.kind === 'bench' && <label>
+            <span>{label('基准正则（留空运行全部）', 'Benchmark regex (empty runs all)')}</span>
+            <input value={selected.benchPattern} placeholder="Benchmark.*|." onChange={(event) => update({ benchPattern: event.target.value })} />
+          </label>}
           {selected.kind === 'run' && <label>
             <span>{label('程序参数', 'Program arguments')}</span>
             <input value={selected.programArgs} placeholder="-port 8080 --verbose" onChange={(event) => update({ programArgs: event.target.value })} />
           </label>}
+          <label>
+            <span>{label('启动前执行', 'Before launch')}</span>
+            <Dropdown ariaLabel={label('启动前执行', 'Before launch')} value={selected.beforeLaunch} options={[
+              { value: 'none', label: label('无', 'None') },
+              { value: 'tidy', label: 'go mod tidy' },
+              { value: 'build', label: 'go build ./...' },
+            ]} onChange={(beforeLaunch) => update({ beforeLaunch: beforeLaunch as RunConfiguration['beforeLaunch'] })} />
+          </label>
           <label>
             <span>{label('环境变量（每行 KEY=VALUE）', 'Environment (KEY=VALUE per line)')}</span>
             <textarea rows={3} value={selected.envVars} placeholder={'PORT=8080\nDEBUG=1'} onChange={(event) => update({ envVars: event.target.value })} />

@@ -39,6 +39,8 @@ pub(crate) struct TaskExtras {
     race: Option<bool>,
     coverage: Option<bool>,
     module: Option<String>,
+    /// `go test -bench` pattern; `-run` is pinned to `^$` so only benchmarks run.
+    bench: Option<String>,
 }
 
 fn valid_env_key(key: &str) -> bool {
@@ -142,19 +144,30 @@ fn go_args(
     if extras.module.is_some() {
         extras_used.push("module");
     }
+    if let Some(pattern) = &extras.bench {
+        if pattern.len() > 100
+            || !pattern.chars().all(|character| {
+                character.is_ascii_alphanumeric()
+                    || matches!(character, '.' | '*' | '+' | '|' | '(' | ')' | '^' | '$' | '-' | '_' | '/' | '[' | ']' | ' ')
+            })
+        {
+            return Err("bench pattern contains unsupported characters".to_string());
+        }
+        extras_used.push("bench");
+    }
 
     let scope = scope.unwrap_or(GoTaskScope::Workspace);
     let target = target_path.map(Path::new);
     match task {
         "test" => {
             if !extras_used.iter().all(|extra| {
-                matches!(*extra, "envVars" | "buildTags" | "race" | "coverage")
+                matches!(*extra, "envVars" | "buildTags" | "race" | "coverage" | "bench")
             }) {
                 return Err(format!(
                     "test does not accept {}",
                     extras_used
                         .iter()
-                        .filter(|extra| !matches!(extra, &&"envVars" | &&"buildTags" | &&"race" | &&"coverage"))
+                        .filter(|extra| !matches!(extra, &&"envVars" | &&"buildTags" | &&"race" | &&"coverage" | &&"bench"))
                         .copied()
                         .collect::<Vec<_>>()
                         .join(", ")
@@ -180,6 +193,14 @@ fn go_args(
             let mut flags = build_flags;
             if extras.race == Some(true) {
                 flags.push(OsString::from("-race"));
+            }
+            if let Some(pattern) = &extras.bench {
+                // Benchmarks only: suppress regular tests so `go test` reports
+                // benchmark results instead of running the whole suite.
+                flags.push(OsString::from("-run"));
+                flags.push(OsString::from("^$"));
+                flags.push(OsString::from("-bench"));
+                flags.push(OsString::from(if pattern.trim().is_empty() { "." } else { pattern.as_str() }));
             }
             let mut args = go_tasks::test_args_with_flags(root, scope, test_name, &flags)?;
             let mut cover_profile = None;

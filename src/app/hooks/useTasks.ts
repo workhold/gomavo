@@ -56,6 +56,9 @@ export function useTasks(params: UseTasksParams) {
   const launchingTaskRef = useRef(false)
   const currentTaskKindRef = useRef<string | null>(null)
   const lastTestOptionsRef = useRef<TaskOptions>({})
+  /** Resolvers waiting for a task id to exit, plus the codes already seen. */
+  const taskExitWaitersRef = useRef(new Map<string, Array<(code: number) => void>>())
+  const taskExitCodesRef = useRef(new Map<string, number>())
 
   const addOutput = useCallback((text: string, stream: OutputLine['stream']) => {
     setOutput((current) => [...current, { id: ++outputIdRef.current, text, stream }].slice(-2500))
@@ -124,6 +127,7 @@ export function useTasks(params: UseTasksParams) {
         || options.race !== undefined
         || options.coverage !== undefined
         || options.module !== undefined
+        || options.bench !== undefined
       const id = await command<string>('run_go_task', {
         root, task,
         ...(task === 'run' || task === 'test' ? { scope: options.scope, targetPath: options.targetPath, testName: options.testName } : {}),
@@ -135,6 +139,7 @@ export function useTasks(params: UseTasksParams) {
             ...(options.race !== undefined ? { race: options.race } : {}),
             ...(options.coverage !== undefined ? { coverage: options.coverage } : {}),
             ...(options.module !== undefined ? { module: options.module } : {}),
+            ...(options.bench !== undefined ? { bench: options.bench } : {}),
           },
         } : {}),
       })
@@ -177,6 +182,12 @@ export function useTasks(params: UseTasksParams) {
         }
       }, { target }),
       listen<TaskExit>('task-exit', ({ payload }) => {
+        taskExitCodesRef.current.set(payload.id, payload.code ?? -1)
+        const waiters = taskExitWaitersRef.current.get(payload.id)
+        if (waiters) {
+          taskExitWaitersRef.current.delete(payload.id)
+          for (const waiter of waiters) waiter(payload.code ?? -1)
+        }
         if (ignoredTaskIdsRef.current.delete(payload.id)) { completedTasksRef.current.delete(payload.id); return }
         completedTasksRef.current.add(payload.id)
         if (activeTaskRef.current === payload.id) { activeTaskRef.current = null; currentTaskKindRef.current = null }
@@ -211,8 +222,26 @@ export function useTasks(params: UseTasksParams) {
     setCoverageProfile(null)
   }, [])
 
+  /**
+   * Run a task and wait for its exit: `before launch` chains (go mod tidy →
+   * go test) need the first task finished before the second starts.
+   */
+  const runTaskAwaiting = useCallback(async (task: string, options: TaskOptions = {}): Promise<boolean> => {
+    const started = await runTask(task, options)
+    if (!started) return false
+    const id = activeTaskRef.current
+    if (!id) return true
+    const done = taskExitCodesRef.current.get(id)
+    if (done !== undefined) return done === 0
+    return await new Promise<boolean>((resolve) => {
+      const list = taskExitWaitersRef.current.get(id) ?? []
+      list.push((code) => resolve(code === 0))
+      taskExitWaitersRef.current.set(id, list)
+    })
+  }, [runTask])
+
   return {
     output, setOutput, testResults, testOutput, testOutputByCase, coverageProfile, setCoverageProfile,
-    runningTask, lastTestOptionsRef, addOutput, recordTestEvent, runTask, runSelection, reset,
+    runningTask, lastTestOptionsRef, addOutput, recordTestEvent, runTask, runTaskAwaiting, runSelection, reset,
   }
 }

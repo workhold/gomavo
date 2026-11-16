@@ -1,9 +1,10 @@
 import { useState, type ReactNode, type RefObject } from 'react'
 import {
-  Archive, ArrowDownToLine, ArrowUpFromLine, Book, Check, ChevronDown, ChevronRight, ChevronsDownUp,
+  Archive, ArrowDownToLine, ArrowUpFromLine, Book, Bookmark, Braces, Check, ChevronDown, ChevronRight, ChevronsDownUp,
   CloudDownload, FilePlus2, FolderOpen, FolderPlus, GitBranch, Library, LocateFixed, Package, RefreshCw, X,
 } from 'lucide-react'
 import { displayName, relativePath, type FileEntry, type GitLogEntry, type GitStashEntry, type GitStatus, type GoModInfo } from '../../lib/api'
+import type { StructureSymbol } from '../../lib/lsp'
 import { entryIcon, gitAppearance, iconButton, isWorkspaceFile, statusLabel } from '../helpers'
 import type { ContextState, SideView } from '../types'
 import type { Locale, MessageKey } from '../../lib/i18n'
@@ -66,6 +67,13 @@ export interface SidebarProps {
   /** go.mod dependencies and the Go SDK version, for the External Libraries node. */
   goMod: GoModInfo | null
   goSdkVersion: string | null
+  /** Structure tool window: symbols of the active file. */
+  structureSymbols: StructureSymbol[]
+  structureLoading: boolean
+  /** Bookmarks map for the Bookmarks tool window; removing one navigates the map. */
+  bookmarks: Record<string, number[]>
+  removeBookmark: (path: string, line: number) => void
+  navigateTo: (target: { path: string; line: number; column: number }) => Promise<boolean>
 }
 
 export function Sidebar(props: SidebarProps) {
@@ -79,6 +87,7 @@ export function Sidebar(props: SidebarProps) {
     remoteBusy, gitFetch, gitPull, gitPush, mergeConflicts, gitAbortMerge, openMergeResolver,
     openGitGraph, stashEntries, gitStashPush, gitStashPop, gitStashDrop,
     recentProjects, openRecentProject, goMod, goSdkVersion,
+    structureSymbols, structureLoading, bookmarks, removeBookmark, navigateTo,
   } = props
 
   const [librariesOpen, setLibrariesOpen] = useState(false)
@@ -188,6 +197,47 @@ export function Sidebar(props: SidebarProps) {
             </button>)}
           </div>
         </> : <span>{t('No recent projects')}</span>}</div>}
+    </> : sideView === 'structure' ? <>
+      <div className="sidebar-heading"><span className="tool-window-title">{t('结构')}</span><div className="sidebar-heading-actions">{iconButton(t('关闭结构'), X, () => setSidebarOpen(false))}</div></div>
+      <div className="tree-scroll">
+        {!activePath ? <div className="sidebar-empty"><Braces size={22} /><span>{t('打开文件以查看其结构。')}</span></div>
+          : structureLoading ? <div className="tree-loading" style={{ paddingLeft: 17 }}>{t('读取中…')}</div>
+            : !structureSymbols.length ? <div className="sidebar-empty"><Braces size={22} /><span>{t('该文件没有可显示的符号。')}</span></div>
+              : structureSymbols.map((symbol, index) => <button
+                className="tree-row structure-row"
+                key={`${symbol.name}-${symbol.line}-${index}`}
+                style={{ paddingLeft: 10 + symbol.depth * 14 }}
+                type="button"
+                title={`${symbol.name}${symbol.detail ? ` · ${symbol.detail}` : ''}`}
+                onClick={() => { if (activePath) void navigateTo({ path: activePath, line: symbol.line, column: symbol.column }) }}
+              >
+                <span className="tree-indent" />
+                <Braces size={14} strokeWidth={1.8} className={`tree-file-icon structure-kind-${symbol.kind}`} />
+                <span className="tree-name">{symbol.name}</span>
+                <small>{symbol.line}</small>
+              </button>)}
+      </div>
+    </> : sideView === 'bookmarks' ? <>
+      <div className="sidebar-heading"><span className="tool-window-title">{t('书签')}</span><div className="sidebar-heading-actions">{iconButton(t('关闭书签'), X, () => setSidebarOpen(false))}</div></div>
+      <div className="tree-scroll">
+        {Object.keys(bookmarks).length ? Object.entries(bookmarks).flatMap(([path, lines]) => lines.length ? [
+          <div className="bookmarks-file" key={path}>
+            <button className="tree-row bookmarks-file-row" type="button" title={path} onClick={() => void openFile(path)}>
+              <span className="tree-indent" />
+              <Bookmark size={14} strokeWidth={1.8} className="tree-file-icon" />
+              <span className="tree-name">{displayName(path)}</span>
+              <small>{root && isWorkspaceFile(root, path) ? relativePath(root, path) : ''}</small>
+            </button>
+            {lines.map((line) => <div className="tree-row bookmarks-line-row" key={`${path}:${line}`} style={{ paddingLeft: 24 }}>
+              <span className="tree-indent" />
+              <button className="bookmarks-line-button" type="button" title={`${path}:${line}`} onClick={() => void navigateTo({ path, line, column: 1 })}>
+                <span className="tree-name">{t('第 {line} 行', { line })}</span>
+              </button>
+              <button className="bookmarks-remove" type="button" title={t('移除书签')} aria-label={t('移除书签')} onClick={() => removeBookmark(path, line)}><X size={11} /></button>
+            </div>)}
+          </div>,
+        ] : []) : <div className="sidebar-empty"><Bookmark size={22} /><span>{t('还没有书签。按 F3 在当前行添加书签。')}</span></div>}
+      </div>
     </> : <>
       <div className="sidebar-heading"><span className="tool-window-title">Git</span><div className="sidebar-heading-actions">{iconButton(t('刷新 Git 状态'), RefreshCw, () => { if (root) void refreshGit(root, { refreshIgnored: true }) }, !root)}{iconButton(t('关闭 Git'), X, () => setSidebarOpen(false))}</div></div>
       <div className="git-sidebar">{!root ? <div className="sidebar-empty"><GitBranch size={25} /><span>{t('打开项目以查看 Git 状态')}</span></div> : gitError ? <div className="git-empty"><GitBranch size={25} /><strong>{t('未检测到 Git 仓库')}</strong><span>{formatError(gitError)}</span></div> : <>

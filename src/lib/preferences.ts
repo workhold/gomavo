@@ -8,12 +8,20 @@ export type ShortcutAction =
   | 'symbolSearch'
   | 'toggleProject'
   | 'toggleGit'
+  | 'toggleStructure'
+  | 'toggleBookmarks'
+  | 'toggleTodoPanel'
   | 'toggleTerminal'
   | 'toggleRun'
   | 'toggleProblems'
   | 'toggleSearch'
   | 'toggleDebugPanel'
   | 'goToDefinition'
+  | 'goToImplementation'
+  | 'goToTest'
+  | 'findUsages'
+  | 'jumpToLine'
+  | 'generate'
   | 'navigateBack'
   | 'navigateForward'
   | 'saveCurrent'
@@ -72,7 +80,7 @@ export interface AppearancePreferences {
 export interface RunConfiguration {
   id: string
   name: string
-  kind: 'run' | 'test' | 'build'
+  kind: 'run' | 'test' | 'build' | 'bench'
   scope: 'workspace' | 'file' | 'package' | 'directory'
   targetPath: string | null
   testName: string | null
@@ -80,6 +88,10 @@ export interface RunConfiguration {
   envVars: string
   buildTags: string
   race: boolean
+  /** Task chained before launch: none / go mod tidy / go build ./... */
+  beforeLaunch: 'none' | 'tidy' | 'build'
+  /** Benchmark pattern for the bench kind; empty means all benchmarks. */
+  benchPattern: string
 }
 
 export interface ProjectPreferences {
@@ -126,12 +138,20 @@ export const DEFAULT_SHORTCUTS: Readonly<Record<ShortcutAction, Shortcut>> = {
   symbolSearch: 'Meta+Alt+O',
   toggleProject: 'Meta+1',
   toggleGit: 'Meta+9',
+  toggleStructure: 'Meta+7',
+  toggleBookmarks: 'Meta+2',
+  toggleTodoPanel: null,
   toggleTerminal: 'Alt+F12',
   toggleRun: 'Meta+4',
   toggleProblems: 'Meta+6',
   toggleSearch: 'Meta+Shift+F',
   toggleDebugPanel: 'Meta+5',
   goToDefinition: 'Meta+B',
+  goToImplementation: 'Meta+Alt+B',
+  goToTest: 'Meta+Shift+T',
+  findUsages: 'Alt+F7',
+  jumpToLine: 'Meta+L',
+  generate: 'Meta+N',
   navigateBack: 'Meta+Alt+ArrowLeft',
   navigateForward: 'Meta+Alt+ArrowRight',
   saveCurrent: 'Meta+S',
@@ -156,11 +176,19 @@ export const SHORTCUT_ACTIONS: readonly ShortcutActionInfo[] = [
   { id: 'recentFiles', label: '最近文件', group: '导航', description: '切换到最近打开的文件' },
   { id: 'symbolSearch', label: '转到符号', group: '导航', description: '搜索工作区中的 Go 符号' },
   { id: 'goToDefinition', label: '跳转到定义', group: '导航', description: '打开光标处符号的定义' },
+  { id: 'goToImplementation', label: '跳转到实现', group: '导航', description: '打开光标处接口方法的实现' },
+  { id: 'goToTest', label: '跳转到测试（或被测代码）', group: '导航', description: '在源码与其测试文件之间跳转' },
+  { id: 'findUsages', label: '查找用法', group: '导航', description: '在工具窗口中列出光标处符号的所有引用' },
+  { id: 'jumpToLine', label: '跳转到行:列', group: '导航', description: '在当前文件按行号定位' },
+  { id: 'generate', label: 'Generate 代码生成', group: '导航', description: '在 Go 文件中打开生成菜单（构造函数/Getter/Setter/标签/测试）' },
   { id: 'navigateBack', label: '后退', group: '导航', description: '返回上一个代码位置' },
   { id: 'navigateForward', label: '前进', group: '导航', description: '前往下一个代码位置' },
   { id: 'toggleBookmark', label: '切换书签', group: '导航', description: '在当前行添加或移除书签' },
   { id: 'toggleProject', label: 'Project 工具窗口', group: '工具窗口', description: '显示或隐藏项目文件' },
   { id: 'toggleGit', label: 'Git 工具窗口', group: '工具窗口', description: '显示或隐藏 Git 状态' },
+  { id: 'toggleStructure', label: 'Structure 工具窗口', group: '工具窗口', description: '显示或隐藏当前文件的结构' },
+  { id: 'toggleBookmarks', label: '书签工具窗口', group: '工具窗口', description: '显示或隐藏全部书签列表' },
+  { id: 'toggleTodoPanel', label: 'TODO 工具窗口', group: '工具窗口', description: '显示或隐藏 TODO 注释列表' },
   { id: 'toggleTerminal', label: 'Terminal 工具窗口', group: '工具窗口', description: '显示或隐藏集成终端' },
   { id: 'toggleRun', label: 'Run 工具窗口', group: '工具窗口', description: '显示或隐藏运行输出' },
   { id: 'toggleProblems', label: 'Problems 工具窗口', group: '工具窗口', description: '显示或隐藏诊断列表' },
@@ -320,7 +348,7 @@ export function normalizePreferences(value: unknown): Preferences {
         .map((item): RunConfiguration => ({
           id: typeof item.id === 'string' && item.id ? item.id : `config-${Math.random().toString(36).slice(2, 9)}`,
           name: typeof item.name === 'string' && item.name.trim() ? item.name.trim() : 'Run',
-          kind: item.kind === 'test' || item.kind === 'build' ? item.kind : 'run',
+          kind: item.kind === 'test' || item.kind === 'build' || item.kind === 'bench' ? item.kind : 'run',
           scope: item.scope === 'file' || item.scope === 'package' || item.scope === 'directory' ? item.scope : 'workspace',
           targetPath: typeof item.targetPath === 'string' && item.targetPath ? item.targetPath : null,
           testName: typeof item.testName === 'string' && item.testName ? item.testName : null,
@@ -328,6 +356,8 @@ export function normalizePreferences(value: unknown): Preferences {
           envVars: typeof item.envVars === 'string' ? item.envVars : '',
           buildTags: typeof item.buildTags === 'string' ? item.buildTags : '',
           race: item.race === true,
+          beforeLaunch: item.beforeLaunch === 'tidy' || item.beforeLaunch === 'build' ? item.beforeLaunch : 'none',
+          benchPattern: typeof item.benchPattern === 'string' ? item.benchPattern : '',
         }))
         .slice(0, 40)
     }

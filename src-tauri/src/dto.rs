@@ -81,6 +81,7 @@ pub(crate) struct SearchOptions {
 }
 
 #[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub(crate) struct SearchMatch {
     pub(crate) line: u32,
     /// One-based character column of the match start.

@@ -26,6 +26,18 @@ export interface PaletteProps {
 
 export function Palette(props: PaletteProps) {
   const { t, locale, paletteMode, paletteQuery, setPaletteQuery, paletteSelection, setPaletteSelection, items, closePalette } = props
+  const placeholder = paletteMode === 'files' ? '搜索项目文件…'
+    : paletteMode === 'actions' ? '查找操作…'
+      : paletteMode === 'generate' ? '选择要生成的代码…'
+        : paletteMode === 'intentions' ? '选择要运行的代码操作…'
+          : '随处搜索…'
+  const modeLabel = paletteMode === 'files' ? '项目文件'
+    : paletteMode === 'actions' ? '操作'
+      : paletteMode === 'symbols' ? '符号'
+        : paletteMode === 'recent' ? '最近文件'
+          : paletteMode === 'generate' ? 'Generate'
+            : paletteMode === 'intentions' ? '代码操作'
+              : '随处搜索'
 
   useEffect(() => {
     document.getElementById(`palette-option-${paletteSelection}`)?.scrollIntoView({ block: 'nearest' })
@@ -36,24 +48,21 @@ export function Palette(props: PaletteProps) {
       className="palette"
       role="dialog"
       aria-modal="true"
-      aria-label={t(paletteMode === 'files' ? '搜索项目文件…' : paletteMode === 'actions' ? '查找操作…' : '随处搜索')}
-      onKeyDown={(event) => {
-        if (event.key === 'Tab') { event.preventDefault(); event.currentTarget.querySelector('input')?.focus() }
-      }}
+      aria-label={t(placeholder)}
     >
       <div className="palette-input">
         <Search size={19} aria-hidden="true" />
         <input
           autoFocus
           role="combobox"
-          aria-label={t(paletteMode === 'files' ? '搜索项目文件…' : paletteMode === 'actions' ? '查找操作…' : '随处搜索…')}
+          aria-label={t(placeholder)}
           aria-autocomplete="list"
           aria-expanded="true"
           aria-controls="palette-results"
           aria-activedescendant={items.length ? `palette-option-${Math.min(paletteSelection, items.length - 1)}` : undefined}
           value={paletteQuery}
           onChange={(event) => { setPaletteQuery(event.target.value); setPaletteSelection(0) }}
-          placeholder={t(paletteMode === 'files' ? '搜索项目文件…' : paletteMode === 'actions' ? '查找操作…' : '随处搜索…')}
+          placeholder={t(placeholder)}
           onKeyDown={(event) => {
             if (event.key === 'ArrowDown') { event.preventDefault(); setPaletteSelection((value) => Math.min(value + 1, Math.max(0, items.length - 1))) }
             else if (event.key === 'ArrowUp') { event.preventDefault(); setPaletteSelection((value) => Math.max(0, value - 1)) }
@@ -62,7 +71,7 @@ export function Palette(props: PaletteProps) {
         />
         <kbd aria-hidden="true">ESC</kbd>
       </div>
-      <div className="palette-list" id="palette-results" role="listbox" aria-label={t(paletteMode === 'files' ? '项目文件' : paletteMode === 'actions' ? '操作' : '随处搜索')}>
+      <div className="palette-list" id="palette-results" role="listbox" aria-label={t(modeLabel)}>
         {items.length ? items.map((item, index) => <button
           className={`${index === paletteSelection ? 'selected' : ''} ${item.ignored ? 'git-ignored' : ''}`}
           type="button"
@@ -80,7 +89,7 @@ export function Palette(props: PaletteProps) {
           <small>{item.hint}</small>
         </button>) : <div className="palette-none">{t('没有匹配的文件或命令')}</div>}
       </div>
-      <div className="palette-footer"><Command size={13} aria-hidden="true" />{t(paletteMode === 'files' ? '项目文件' : paletteMode === 'actions' ? '操作' : '随处搜索')}<span>{t('↑↓ 选择 · ↵ 执行')}</span></div>
+      <div className="palette-footer"><Command size={13} aria-hidden="true" />{t(modeLabel)}<span>{t('↑↓ 选择 · ↵ 执行')}</span></div>
     </div>
   </div>
 }

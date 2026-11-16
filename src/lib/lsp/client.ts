@@ -16,6 +16,7 @@ import type {
   LspLocation,
   LspLocationLink,
   LspPosition,
+  LspRange,
   LspSemanticTokens,
   LspSemanticTokensCapability,
   LspSignatureHelp,
@@ -55,6 +56,17 @@ export interface WorkspaceSymbolEntry {
   column: number
 }
 
+/** One row of the Structure tool window (flattened hierarchical symbols). */
+export interface StructureSymbol {
+  name: string
+  kind: string
+  detail: string
+  container: string
+  depth: number
+  line: number
+  column: number
+}
+
 export type DiagnosticsCallback = (items: DiagnosticEntry[]) => void
 export type OpenDefinitionCallback = (target: DefinitionTarget, source: Monaco.editor.ICodeEditor) => boolean | Promise<boolean>
 /** Apply gopls edits (rename, quick fixes) across files, including unopened ones. */
@@ -83,15 +95,20 @@ export function applyTextEdits(text: string, edits: readonly LspTextEdit[]): str
     if (start + position.character > end) throw new Error('gopls returned an invalid formatting range')
     return start + position.character
   }
+  // Same-position inserts (gopls add_test sends three at 0:0) must keep array
+  // order, so sort ascending and apply back-to-front: each insert then lands
+  // after the previously placed text instead of pushing before it.
   const ordered = edits.map((edit) => ({
     start: offset(edit.range.start),
     end: offset(edit.range.end),
     text: edit.newText,
-  })).sort((left, right) => right.start - left.start || right.end - left.end)
-  let previousStart = text.length + 1
+  })).sort((left, right) => left.start - right.start)
+  let previousStart: number | undefined
   let result = text
-  for (const edit of ordered) {
-    if (edit.end < edit.start || edit.end > previousStart) throw new Error('gopls returned overlapping formatting edits')
+  for (let index = ordered.length - 1; index >= 0; index -= 1) {
+    const edit = ordered[index]
+    if (edit.end < edit.start) throw new Error('gopls returned overlapping formatting edits')
+    if (previousStart !== undefined && previousStart < edit.end) throw new Error('gopls returned overlapping formatting edits')
     result = result.slice(0, edit.start) + edit.text + result.slice(edit.end)
     previousStart = edit.start
   }
@@ -1062,6 +1079,161 @@ export class GoplsClient {
       line: symbol.location.range.start.line + 1,
       column: symbol.location.range.start.character + 1,
     }))
+  }
+
+  /**
+   * Code actions at a position, optionally restricted to kinds such as
+   * `refactor.extract.variable`. Powers the Refactor menu and the
+   * run-intention popup; empty when gopls offers nothing there.
+   */
+  async codeActionsAtCursor(path: string, line: number, column: number, only?: string[], endLine?: number, endColumn?: number): Promise<LspCodeAction[]> {
+    await this.start()
+    const uri = fileUri(path)
+    const model = this.monaco.editor.getModel(this.monaco.Uri.parse(uri))
+    if (model) await this.syncModel(model)
+    else if (this.documents.has(uri)) await this.changeDocument(path, this.documents.get(uri)!.text)
+    if (this.stopped) return []
+    const diagnostics = (this.diagnostics.get(uri) ?? []).filter((diagnostic) =>
+      diagnostic.range.start.line <= line - 1 && diagnostic.range.end.line >= line - 1)
+    const actions = await this.request<LspCodeAction[] | null>('textDocument/codeAction', {
+      textDocument: { uri },
+      range: {
+        start: { line: line - 1, character: column - 1 },
+        end: { line: (endLine ?? line) - 1, character: (endColumn ?? column) - 1 },
+      },
+      context: { diagnostics, ...(only?.length ? { only } : {}) },
+    })
+    if (this.stopped) return []
+    // gopls marks unusable actions with `disabled: { reason }`; skip those.
+    return (actions ?? []).filter((action) => !(action as { disabled?: unknown }).disabled)
+  }
+
+  /**
+   * AST node ranges enclosing each position, innermost first (gopls caps the
+   * chain). gopls v0.24+ only offers extract refactorings for real ranges
+   * that start on the expression, so the Refactor menu walks this chain when
+   * the user has no selection.
+   */
+  async selectionRanges(path: string, line: number, column: number, maxDepth = 6): Promise<Array<{ start: { line: number; character: number }; end: { line: number; character: number } }>> {
+    await this.start()
+    const uri = fileUri(path)
+    const model = this.monaco.editor.getModel(this.monaco.Uri.parse(uri))
+    if (model) await this.syncModel(model)
+    else if (this.documents.has(uri)) await this.changeDocument(path, this.documents.get(uri)!.text)
+    if (this.stopped) return []
+    const response = await this.request<Array<{ range: LspRange; parent?: unknown }> | null>('textDocument/selectionRange', {
+      textDocument: { uri },
+      positions: [{ line: line - 1, character: column - 1 }],
+    })
+    const ranges: Array<{ start: { line: number; character: number }; end: { line: number; character: number } }> = []
+    let node = response?.[0]
+    while (node && ranges.length < maxDepth) {
+      ranges.push(node.range)
+      node = (node as { parent?: { range: LspRange } }).parent
+    }
+    return ranges
+  }
+
+  /**
+   * Apply a code action returned by codeActionsAtCursor: workspace edits go
+   * through the workspace-edit callback (open tabs in place, closed files on
+   * disk); command actions run as gopls server commands.
+   */
+  async applyCodeAction(input: LspCodeAction): Promise<void> {
+    // gopls serves extract refactors lazily: the codeAction carries only `data`
+    // (resolveSupport is declared in initialize) and the edit arrives from
+    // codeAction/resolve.
+    let action = input
+    if (!action.edit && !action.command && action.data) {
+      action = await this.request<LspCodeAction>('codeAction/resolve', action, 10000)
+    }
+    if (action.edit) {
+      const changes = this.workspaceEditChanges(action.edit)
+      if (this.onWorkspaceEdit && Object.keys(changes).length) await this.onWorkspaceEdit(changes)
+      return
+    }
+    if (action.command) {
+      await this.request('workspace/executeCommand', {
+        command: action.command.command,
+        arguments: action.command.arguments ?? [],
+      }, 15000)
+    }
+  }
+
+  /** Find Usages tool window data: references plus the declaration itself. */
+  async findUsages(path: string, line: number, column: number): Promise<Array<{ path: string; line: number; column: number }>> {
+    await this.start()
+    const model = this.monaco.editor.getModel(this.monaco.Uri.parse(fileUri(path)))
+    if (model) await this.syncModel(model)
+    if (this.stopped) return []
+    const result = await this.request<unknown>('textDocument/references', {
+      textDocument: { uri: fileUri(path) },
+      position: { line: line - 1, character: column - 1 },
+      context: { includeDeclaration: true },
+    })
+    return locations(result).map((location) => ({
+      path: uriToPath(location.uri),
+      line: location.range.start.line + 1,
+      column: location.range.start.character + 1,
+    }))
+  }
+
+  /** Go to Implementation (⌥⌘B): gopls resolves interface methods to implementations. */
+  async goToImplementation(path: string, line: number, column: number): Promise<DefinitionTarget | null> {
+    await this.start()
+    const model = this.monaco.editor.getModel(this.monaco.Uri.parse(fileUri(path)))
+    if (model) await this.syncModel(model)
+    if (this.stopped) return null
+    const result = await this.request<unknown>('textDocument/implementation', {
+      textDocument: { uri: fileUri(path) },
+      position: { line: line - 1, character: column - 1 },
+    })
+    const first = locations(result)[0]
+    return first
+      ? { path: uriToPath(first.uri), line: first.range.start.line + 1, column: first.range.start.character + 1 }
+      : null
+  }
+
+  /**
+   * Hierarchical document symbols for the Structure tool window. Accepts the
+   * current buffer text so an unsaved edit still outlines correctly.
+   */
+  async documentSymbols(path: string, text: string): Promise<StructureSymbol[] | null> {
+    await this.start()
+    if (this.stopped) return null
+    await this.changeDocument(path, text)
+    const uri = fileUri(path)
+    const symbols = await this.request<LspDocumentSymbol[] | null>('textDocument/documentSymbol', {
+      textDocument: { uri },
+    })
+    if (this.stopped) return null
+    const flatten = (items: LspDocumentSymbol[] | undefined, container: string, depth: number): StructureSymbol[] =>
+      (items ?? []).flatMap((symbol) => [
+        {
+          name: symbol.name,
+          kind: this.symbolKindName(symbol.kind),
+          detail: symbol.detail ?? '',
+          container,
+          depth,
+          line: symbol.selectionRange.start.line + 1,
+          column: symbol.selectionRange.start.character + 1,
+        },
+        ...flatten(symbol.children, symbol.name, depth + 1),
+      ])
+    // SymbolInformation (flat) still arrives for some servers; handle both shapes.
+    const first = (symbols as unknown[] | null)?.[0]
+    if (first && 'location' in (first as Record<string, unknown>)) {
+      return (symbols as unknown as LspSymbolInformation[]).map((symbol) => ({
+        name: symbol.name,
+        kind: this.symbolKindName(symbol.kind),
+        detail: '',
+        container: symbol.containerName ?? '',
+        depth: 0,
+        line: symbol.location.range.start.line + 1,
+        column: symbol.location.range.start.character + 1,
+      }))
+    }
+    return flatten((symbols as LspDocumentSymbol[] | null) ?? [], '', 0)
   }
 
   private symbolKindName(kind: number): string {

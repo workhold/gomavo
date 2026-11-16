@@ -3,8 +3,9 @@ import { useCallback, useMemo } from 'react'
 import Editor from '@monaco-editor/react'
 import type { OnChange, OnMount } from '@monaco-editor/react'
 import type * as Monaco from 'monaco-editor'
-import { ArrowLeft, ArrowRight, Columns2, FilePlus2, FolderOpen, FolderPlus, Pin, TerminalSquare, X } from 'lucide-react'
+import { ArrowLeft, ArrowRight, BookOpen, Columns2, FilePlus2, FolderOpen, FolderPlus, Pin, TerminalSquare, X } from 'lucide-react'
 import { displayName, fileLanguage, relativePath, type GitStatus } from '../../lib/api'
+import { renderMarkdown } from '../../lib/markdownPreview'
 import { fileUri } from '../../lib/lsp'
 import { entryIcon, gitAppearance, iconButton, isWorkspaceFile } from '../helpers'
 import type { OpenFile, PanelView, TabContextState } from '../types'
@@ -54,6 +55,9 @@ export interface EditorAreaProps {
   theme: string
   /** Renders each line number; returns '' to hide it (breakpoint overlay). */
   lineNumbersFormatter?: (line: number) => string
+  /** Markdown preview pane shown beside the active .md file. */
+  mdPreviewOpen: boolean
+  setMdPreviewOpen: (value: boolean) => void
 }
 
 export function EditorArea(props: EditorAreaProps) {
@@ -62,9 +66,11 @@ export function EditorArea(props: EditorAreaProps) {
     navigateHistory, historyNavigationBusy, historyAvailability, editorTabListRef, beforeEditorMount,
     onEditorMount, onSplitEditorMount, changeFile, externalContent, editorPreferences, activeIndentOptions,
     chooseWorkspace, openNewProject, showDialog, setPanelView, setPanelOpen, splitPath, setSplitPath, theme,
-    lineNumbersFormatter,
+    lineNumbersFormatter, mdPreviewOpen, setMdPreviewOpen,
   } = props
   const splitFile = tabs.find((file) => file.path === splitPath) ?? null
+  const isMarkdown = !!activeFile && !activeFile.binary && activeFile.path.endsWith('.md')
+  const previewHtml = useMemo(() => mdPreviewOpen && isMarkdown ? renderMarkdown(activeFile.content) : '', [activeFile?.content, isMarkdown, mdPreviewOpen])
   const editorOptions = useCallback((readOnly: boolean | undefined) => ({ automaticLayout: true, readOnly: !!readOnly, fontFamily: "'JetBrains Mono', 'SFMono-Regular', Consolas, monospace", fontSize: editorPreferences.fontSize, lineHeight: editorPreferences.lineHeight, ...activeIndentOptions, minimap: { enabled: editorPreferences.minimap, scale: 1 }, smoothScrolling: true, cursorBlinking: 'smooth', cursorSmoothCaretAnimation: 'off', scrollBeyondLastLine: false, lineNumbersMinChars: 2, lineNumbers: editorPreferences.showLineNumbers ? (lineNumbersFormatter ?? 'on') : 'off', renderWhitespace: editorPreferences.showWhitespace ? 'all' : 'none', guides: { indentation: true }, padding: { top: 18, bottom: 20 }, bracketPairColorization: { enabled: false }, inlineSuggest: { enabled: true }, multiCursorModifier: 'alt', fixedOverflowWidgets: true, definitionLinkOpensInPeek: false, gotoLocation: { multipleDefinitions: 'goto' }, wordWrap: editorPreferences.wordWrap ? 'on' : 'off', 'semanticHighlighting.enabled': true, glyphMargin: true, inlayHints: { enabled: editorPreferences.inlayHints ? 'on' : 'off' } } as const), [editorPreferences, activeIndentOptions, lineNumbersFormatter])
   // Stable option objects keep the memoized Editor from re-rendering (and
   // re-running updateOptions) on every keystroke.
@@ -95,11 +101,12 @@ export function EditorArea(props: EditorAreaProps) {
         {iconButton(t('后退'), ArrowLeft, () => void navigateHistory('back'), !historyNavigationBusy && !historyAvailability.back)}
         {iconButton(t('前进'), ArrowRight, () => void navigateHistory('forward'), !historyNavigationBusy && !historyAvailability.forward)}
         {iconButton(splitPath ? t('取消分屏') : t('向右分屏'), Columns2, () => setSplitPath(splitPath ? null : activePath), !activeFile)}
+        {isMarkdown && iconButton(t('切换 Markdown 预览'), BookOpen, () => setMdPreviewOpen(!mdPreviewOpen), false)}
       </div>
       {activeFile?.readOnly && <span className="tabs-readonly">{t('只读')}</span>}
       {activeFile && iconButton(t('关闭当前标签'), X, () => void closeTab(activeFile.path))}
     </div>
-    <div className={`editor-container ${splitFile ? 'split' : ''}`}>
+    <div className={`editor-container ${splitFile ? 'split' : ''} ${mdPreviewOpen && isMarkdown ? 'with-preview' : ''}`}>
       {activeFile ? <Editor
         path={fileUri(activeFile.path)}
         language={activeFile.binary ? 'plaintext' : fileLanguage(activeFile.path)}
@@ -126,6 +133,7 @@ export function EditorArea(props: EditorAreaProps) {
           options={splitOptions}
         />
       </div> : null}
+      {mdPreviewOpen && isMarkdown && <div className="markdown-preview-pane" aria-label={t('Markdown 预览')} dangerouslySetInnerHTML={{ __html: previewHtml }} />}
     </div>
     {children}
   </main>

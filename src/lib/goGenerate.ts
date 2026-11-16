@@ -158,3 +158,67 @@ export function generateGetters(source: string, structName: string, fieldNames?:
     .join('')
   return { content: methods, insertLine: target.endLine + 1 }
 }
+
+/** Build setter methods for the unexported fields of a struct. */
+export function generateSetters(source: string, structName: string, fieldNames?: string[]): { content: string; insertLine: number } | null {
+  const target = goStructs(source).find((item) => item.name === structName)
+  if (!target) return null
+  const selected = target.fields.filter(
+    (field) => /^[a-z_]/.test(field.name) && (!fieldNames || fieldNames.includes(field.name)),
+  )
+  if (!selected.length) return null
+  const methods = selected
+    .map((field) => {
+      const accessor = field.name[0].toUpperCase() + field.name.slice(1)
+      const parameter = parameterName(field.name)
+      return `\n// ${accessor} sets the ${field.name} field.\nfunc (s *${structName}) Set${accessor}(${parameter} ${field.type}) {\n\ts.${field.name} = ${parameter}\n}\n`
+    })
+    .join('')
+  return { content: methods, insertLine: target.endLine + 1 }
+}
+
+export type StructTagScheme = 'json' | 'yaml' | 'db'
+
+const TAG_KEY: Record<StructTagScheme, string> = { json: 'json', yaml: 'yaml', db: 'db' }
+
+/** Rewrite every field of the struct to carry a `<scheme>:"name"` tag. */
+export function generateStructTags(source: string, structName: string, scheme: StructTagScheme): { nextContent: string } | null {
+  const target = goStructs(source).find((item) => item.name === structName)
+  if (!target || !target.fields.length) return null
+  const key = TAG_KEY[scheme]
+  const lines = source.split('\n')
+  const fieldLines = new Map(target.fields.map((field) => [field.line, field.name]))
+  const tagName = (name: string): string => scheme === 'db' || scheme === 'json' ? camelToLowerSnake(name) : lowerCamel(name)
+  // Field lines sit inside the struct body; append or extend their backtick tags.
+  for (const [line, name] of fieldLines) {
+    const lineIndex = line - 1
+    if (lineIndex < 0 || lineIndex >= lines.length) continue
+    const text = lines[lineIndex]
+    const tag = `${key}:"${tagName(name)}"`
+    const existing = /`([^`]*)`/.exec(text)
+    if (existing) {
+      const inside = existing[1]
+      // Replace a same-key tag, otherwise append the new key.
+      const next = new RegExp(`${key}:"[^"]*"`).test(inside)
+        ? inside.replace(new RegExp(`(?:^|\\s)?${key}:"[^"]*"`), tag).trim()
+        : `${inside} ${tag}`.trim()
+      lines[lineIndex] = text.replace(/`[^`]*`/, `\`${next}\``)
+    } else {
+      const withoutComment = text.replace(/\/\/.*$/, '')
+      lines[lineIndex] = `${withoutComment.replace(/\s+$/, '')} \`${tag}\``
+    }
+  }
+  return { nextContent: lines.join('\n') }
+}
+
+/** json/db tag names are lower snake case; yaml keeps lower camel. */
+function camelToLowerSnake(name: string): string {
+  return name
+    .replace(/([a-z0-9])([A-Z])/g, '$1_$2')
+    .replace(/_+/g, '_')
+    .toLowerCase()
+}
+
+function lowerCamel(name: string): string {
+  return /^[A-Z]/.test(name) ? name[0].toLowerCase() + name.slice(1) : name
+}
