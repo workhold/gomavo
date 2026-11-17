@@ -199,7 +199,7 @@ fn base_window_config(app: &AppHandle) -> BackendResult<tauri::utils::config::Wi
         .first()
         .ok_or("The main window configuration is missing")?
         .clone();
-    config.title = "MG Land".to_string();
+    config.title = "GoMavo".to_string();
     config.decorations = true;
     config.resizable = true;
     config.maximizable = true;
@@ -305,12 +305,12 @@ fn create_window(app: &AppHandle, intent: StartupIntent) -> BackendResult<()> {
 
 #[cfg(target_os = "macos")]
 extern "C" {
-    fn mgland_install_dock_menu() -> bool;
+    fn gomavo_install_dock_menu() -> bool;
 }
 
 #[cfg(target_os = "macos")]
 #[no_mangle]
-extern "C" fn mgland_open_new_window_from_dock() {
+extern "C" fn gomavo_open_new_window_from_dock() {
     // Dock actions run on AppKit's main thread; building a new webview on a
     // worker keeps its contextual menu responsive.
     let Some(app) = DOCK_APP.get().cloned() else {
@@ -328,7 +328,7 @@ extern "C" fn mgland_open_new_window_from_dock() {
 pub(crate) fn install_dock_menu(app: &AppHandle) {
     let _ = DOCK_APP.set(app.clone());
     // The Tao app delegate is already installed by Tauri when setup runs.
-    if !unsafe { mgland_install_dock_menu() } {
+    if !unsafe { gomavo_install_dock_menu() } {
         eprintln!("Could not install the macOS Dock project menu");
     }
 }
@@ -787,7 +787,7 @@ mod tests {
             .duration_since(UNIX_EPOCH)
             .unwrap()
             .as_nanos();
-        let parent = env::temp_dir().join(format!("mgland-project-create-{nonce}"));
+        let parent = env::temp_dir().join(format!("gomavo-project-create-{nonce}"));
         fs::create_dir(&parent).unwrap();
         let parent_string = parent.to_string_lossy().into_owned();
         let project = create_go_project(

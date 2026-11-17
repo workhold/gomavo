@@ -341,7 +341,7 @@ mod tests {
             .unwrap()
             .as_nanos();
         let base =
-            env::temp_dir().join(format!("mgland-search-{tag}-{}-{nonce}", std::process::id()));
+            env::temp_dir().join(format!("gomavo-search-{tag}-{}-{nonce}", std::process::id()));
         fs::create_dir_all(&base).unwrap();
         fs::canonicalize(&base).unwrap()
     }

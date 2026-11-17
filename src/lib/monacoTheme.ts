@@ -1,7 +1,7 @@
 import type * as Monaco from 'monaco-editor'
 
-/** GoLand's Islands Dark editor scheme, applied as the `mgland-dark` Monaco theme. */
-export function defineMglandTheme(monaco: typeof Monaco): void {
+/** GoLand's Islands Dark editor scheme, applied as the `gomavo-dark` Monaco theme. */
+export function defineGomavoTheme(monaco: typeof Monaco): void {
   // gopls reports these as modifiers on `type`, `variable`, and `parameter`,
   // not as standalone `interface` or `struct` token types.
   const goTypeModifiers = [
@@ -13,13 +13,13 @@ export function defineMglandTheme(monaco: typeof Monaco): void {
 }
 
 /** Resolve the Monaco theme name for an appearance preference. */
-export function monacoThemeName(theme: 'dark' | 'light' | 'system', prefersColorSchemeDark: boolean): 'mgland-dark' | 'mgland-light' {
+export function monacoThemeName(theme: 'dark' | 'light' | 'system', prefersColorSchemeDark: boolean): 'gomavo-dark' | 'gomavo-light' {
   const effective = theme === 'system' ? (prefersColorSchemeDark ? 'dark' : 'light') : theme
-  return effective === 'light' ? 'mgland-light' : 'mgland-dark'
+  return effective === 'light' ? 'gomavo-light' : 'gomavo-dark'
 }
 
 function defineDark(monaco: typeof Monaco, goTypeModifiers: string[]): void {
-  monaco.editor.defineTheme('mgland-dark', {
+  monaco.editor.defineTheme('gomavo-dark', {
     // Keep the syntax rules explicit so Monaco's built-in VS Dark token
     // colors cannot leak into Go files.
     base: 'vs-dark', inherit: false,
@@ -135,7 +135,7 @@ function defineDark(monaco: typeof Monaco, goTypeModifiers: string[]): void {
 
 /** A light counterpart aligned with GoLand's bundled "Light" scheme. */
 function defineLight(monaco: typeof Monaco, goTypeModifiers: string[]): void {
-  monaco.editor.defineTheme('mgland-light', {
+  monaco.editor.defineTheme('gomavo-light', {
     base: 'vs', inherit: false,
     rules: [
       { token: 'comment', foreground: '8C8C8C', fontStyle: 'italic' },

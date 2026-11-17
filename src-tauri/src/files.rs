@@ -31,7 +31,7 @@ pub(crate) fn open_workspace(
     drop(active);
     project_windows::set_window_workspace(window.app_handle(), window.label(), &canonical)?;
     let name = canonical.file_name().unwrap_or(canonical.as_os_str());
-    let _ = window.set_title(&format!("{} — MG Land", name.to_string_lossy()));
+    let _ = window.set_title(&format!("{} — GoMavo", name.to_string_lossy()));
     Ok(canonical.to_string_lossy().into_owned())
 }
 
@@ -363,7 +363,7 @@ mod tests {
             .duration_since(UNIX_EPOCH)
             .unwrap()
             .as_nanos();
-        let root = env::temp_dir().join(format!("mgland-save-test-{}-{nonce}", std::process::id()));
+        let root = env::temp_dir().join(format!("gomavo-save-test-{}-{nonce}", std::process::id()));
         fs::create_dir_all(&root).unwrap();
         let file = root.join("main.go");
         fs::write(&file, "initial").unwrap();
@@ -406,7 +406,7 @@ mod tests {
             .unwrap()
             .as_nanos();
         let root =
-            env::temp_dir().join(format!("mgland-create-test-{}-{nonce}", std::process::id()));
+            env::temp_dir().join(format!("gomavo-create-test-{}-{nonce}", std::process::id()));
         fs::create_dir_all(&root).unwrap();
         let state = AppState::default();
         *lock(&state.core.workspace).unwrap() = Some(fs::canonicalize(&root).unwrap());
@@ -440,7 +440,7 @@ mod tests {
             .duration_since(UNIX_EPOCH)
             .unwrap()
             .as_nanos();
-        let base = env::temp_dir().join(format!("mgland-index-{}-{nonce}", std::process::id()));
+        let base = env::temp_dir().join(format!("gomavo-index-{}-{nonce}", std::process::id()));
         let root = base.join("project");
         for name in [".git", "node_modules", "target", "src"] {
             fs::create_dir_all(root.join(name)).unwrap();
@@ -479,7 +479,7 @@ mod tests {
             .duration_since(UNIX_EPOCH)
             .unwrap()
             .as_nanos();
-        let base = env::temp_dir().join(format!("mgland-ignored-{}-{nonce}", std::process::id()));
+        let base = env::temp_dir().join(format!("gomavo-ignored-{}-{nonce}", std::process::id()));
         let root = base.join("project");
         let nested = root.join("src");
         fs::create_dir_all(root.join("cache")).unwrap();

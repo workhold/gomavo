@@ -22,7 +22,7 @@ import { registerGoTemplates } from './lib/goTemplates'
 import { coverageRanges } from './lib/coverage'
 import { rememberProject, loadRecentProjects } from './lib/recentProjects'
 import { createShortcutMatcher, DEFAULT_SHORTCUTS, loadPreferences, loadProjectGoOverrides, savePreferences, saveProjectGoOverrides, shortcutFromKeyboardEvent, type GoPreferences, type Preferences, type RunConfiguration, type ShortcutAction } from './lib/preferences'
-import { createProjectCodeStyleIfMissing, loadProjectCodeStyleSnapshot, parseProjectCodeStyle, projectCodeStyleExists, projectCodeStylePath, saveProjectCodeStyle, serializeProjectCodeStyle, type ProjectCodeStyleIO } from './lib/projectCodeStyle'
+import { createProjectCodeStyleIfMissing, loadProjectCodeStyleSnapshot, migrateLegacyProjectCodeStyle, parseProjectCodeStyle, projectCodeStyleExists, projectCodeStylePath, saveProjectCodeStyle, serializeProjectCodeStyle, type ProjectCodeStyleIO } from './lib/projectCodeStyle'
 import { createLocalUnifiedDiff, LocalEditHistory } from './lib/localHistory'
 import { executePluginAction, getEnabledPluginActions, getPlugins, subscribePlugins } from './lib/plugins/plugins'
 import { NativePluginHost } from './lib/plugins/nativePluginHost'
@@ -30,7 +30,7 @@ import { listNativePlugins, type InstalledNativePlugin } from './lib/plugins/nat
 import { loadLocale, saveLocale, translate, type Locale, type MessageKey } from './lib/i18n'
 import { localizeError } from './lib/errorI18n'
 import { applyEditorConfigToContent, editorConfigIndentOptions, parseGoLandCodeStyle, resolveEditorConfig, type EditorConfigSettings } from './lib/editorConfig'
-import { defineMglandTheme, monacoThemeName } from './lib/monacoTheme'
+import { defineGomavoTheme, monacoThemeName } from './lib/monacoTheme'
 import { registerGoSuffixCompletions } from './lib/goSuffix'
 import { installGoTodoDecorations } from './lib/goHighlight'
 import { installModifierNavigation } from './lib/modifierNavigation'
@@ -99,7 +99,7 @@ function insertGenerated(editor: Monaco.editor.IStandaloneCodeEditor, generator:
   const generated = generator(model.getValue())
   if (!generated) return
   const line = Math.min(Math.max(generated.insertLine, 1), model.getLineCount() + 1)
-  editor.executeEdits('mgland.generate', [{
+  editor.executeEdits('gomavo.generate', [{
     range: { startLineNumber: line, startColumn: 1, endLineNumber: line, endColumn: 1 },
     text: generated.content,
     forceMoveMarkers: true,
@@ -228,13 +228,13 @@ function App() {
   // --- New tool state: split, breakpoints, bookmarks, recents, search, theme ---
   const [splitPath, setSplitPath] = useState<string | null>(null)
   const [breakpoints, setBreakpoints] = useState<Record<string, number[]>>(() => {
-    try { return JSON.parse(localStorage.getItem('mgland.breakpoints') ?? '{}') as Record<string, number[]> } catch { return {} }
+    try { return JSON.parse(localStorage.getItem('gomavo.breakpoints') ?? '{}') as Record<string, number[]> } catch { return {} }
   })
   const breakpointsRef = useRef(breakpoints)
   breakpointsRef.current = breakpoints
   /** Per-breakpoint condition/logMessage specs (GoLand breakpoint properties). */
   const [breakpointSpecs, setBreakpointSpecs] = useState<Record<string, Record<number, BreakpointSpec>>>(() => {
-    try { return JSON.parse(localStorage.getItem('mgland.breakpointSpecs') ?? '{}') as Record<string, Record<number, BreakpointSpec>> } catch { return {} }
+    try { return JSON.parse(localStorage.getItem('gomavo.breakpointSpecs') ?? '{}') as Record<string, Record<number, BreakpointSpec>> } catch { return {} }
   })
   const breakpointSpecsRef = useRef(breakpointSpecs)
   breakpointSpecsRef.current = breakpointSpecs
@@ -249,7 +249,7 @@ function App() {
   const [lineJumpDraft, setLineJumpDraft] = useState('')
   const lineJumpInputRef = useRef<HTMLInputElement | null>(null)
   const [bookmarks, setBookmarks] = useState<Record<string, number[]>>(() => {
-    try { return JSON.parse(localStorage.getItem('mgland.bookmarks') ?? '{}') as Record<string, number[]> } catch { return {} }
+    try { return JSON.parse(localStorage.getItem('gomavo.bookmarks') ?? '{}') as Record<string, number[]> } catch { return {} }
   })
   const [recentProjects, setRecentProjects] = useState<string[]>(loadRecentProjects)
   /** Style-family scope: "global" applies everywhere, "project" only to the open workspace. */
@@ -277,7 +277,7 @@ function App() {
   }, [])
 
   useEffect(() => {
-    document.documentElement.classList.toggle('theme-light', monacoTheme === 'mgland-light')
+    document.documentElement.classList.toggle('theme-light', monacoTheme === 'gomavo-light')
   }, [monacoTheme])
 
   // Force-sync Monaco with the active theme: the editor library applies the
@@ -289,15 +289,15 @@ function App() {
   }, [monacoApi, monacoTheme])
 
   useEffect(() => {
-    try { localStorage.setItem('mgland.breakpoints', JSON.stringify(breakpoints)) } catch { /* storage full */ }
+    try { localStorage.setItem('gomavo.breakpoints', JSON.stringify(breakpoints)) } catch { /* storage full */ }
   }, [breakpoints])
 
   useEffect(() => {
-    try { localStorage.setItem('mgland.breakpointSpecs', JSON.stringify(breakpointSpecs)) } catch { /* storage full */ }
+    try { localStorage.setItem('gomavo.breakpointSpecs', JSON.stringify(breakpointSpecs)) } catch { /* storage full */ }
   }, [breakpointSpecs])
 
   useEffect(() => {
-    try { localStorage.setItem('mgland.bookmarks', JSON.stringify(bookmarks)) } catch { /* storage full */ }
+    try { localStorage.setItem('gomavo.bookmarks', JSON.stringify(bookmarks)) } catch { /* storage full */ }
   }, [bookmarks])
 
   const activeFile = tabs.find((file) => file.path === activePath) ?? null
@@ -367,8 +367,8 @@ function App() {
     })
   }, [effectiveGo.localPrefix, effectiveGo.staticcheck, effectiveGo.gofumpt])
 
-  // Project style now lives in .mgland/code-style.json. Migrate the older
-  // browser-local overrides when a workspace has no style file yet.
+  // Project style now lives in .gomavo/code-style.json. Copy the previous
+  // project file, then migrate older browser-local overrides if needed.
   useEffect(() => {
     const request = ++projectStyleLoadRequestRef.current
     setProjectGoOverrides({})
@@ -379,7 +379,7 @@ function App() {
       return
     }
     const load = (async () => {
-      let snapshot = await loadProjectCodeStyleSnapshot(root, projectCodeStyleIO)
+      let snapshot = await migrateLegacyProjectCodeStyle(root, projectCodeStyleIO)
       if (snapshot === null) {
         const legacy = loadProjectGoOverrides(root)
         if (Object.keys(legacy).length) {
@@ -430,7 +430,7 @@ function App() {
       saveProjectGoOverrides(workspace, {})
       if (rootRef.current === workspace) {
         syncProjectStyleTabRef.current?.(projectCodeStylePath(workspace), content)
-        if (!treeRef.current[workspace]?.some((entry) => entry.name === '.mgland')) {
+        if (!treeRef.current[workspace]?.some((entry) => entry.name === '.gomavo')) {
           const entries = await command<FileEntry[]>('list_directory', { path: workspace })
           setTree((current) => ({ ...current, [workspace]: entries }))
         }
@@ -652,7 +652,7 @@ function App() {
 
   useEffect(() => {
     document.documentElement.lang = locale
-    document.title = root ? `${displayName(root)} · MGLand` : t('MGLand · Go 开发环境')
+    document.title = root ? `${displayName(root)} · GoMavo` : t('GoMavo · Go 开发环境')
     saveLocale(locale)
   }, [locale, root, t])
 
@@ -930,7 +930,7 @@ function App() {
       setSplitPath(null)
       resetDebugger()
       setRecentProjects(rememberProject(canonical))
-      localStorage.setItem('mgland.lastWorkspace', canonical)
+      localStorage.setItem('gomavo.lastWorkspace', canonical)
       await Promise.all([refreshDirectory(canonical), refreshProjectFiles(canonical), refreshGit(canonical), refreshTools()])
       try {
         const mod = await command<string>('read_file', { path: joinPath(canonical, 'go.mod') })
@@ -947,9 +947,9 @@ function App() {
     void command<StartupIntent>('startup_intent').then((intent) => {
       if (rootRef.current) return
       if (intent.newProject) { setNewProjectOpen(true); return }
-      const path = intent.emptyWindow ? null : intent.workspace ?? localStorage.getItem('mgland.lastWorkspace')
+      const path = intent.emptyWindow ? null : intent.workspace ?? localStorage.getItem('gomavo.lastWorkspace')
       if (path) void activateWorkspace(path).catch((cause) => {
-        if (!intent.workspace) localStorage.removeItem('mgland.lastWorkspace')
+        if (!intent.workspace) localStorage.removeItem('gomavo.lastWorkspace')
         else notify(formatError(cause), 'error')
       })
     }).catch((cause) => notify(formatError(cause), 'error'))
@@ -2281,7 +2281,7 @@ function App() {
   }, [context, tabContext, moduleMenu, configMenu, branchMenu, projectMenuOpen])
 
   const beforeEditorMount = useCallback((monaco: typeof Monaco) => {
-    defineMglandTheme(monaco)
+    defineGomavoTheme(monaco)
     registerGoSuffixCompletions(monaco)
     registerGoTemplates(monaco)
   }, [])
@@ -2313,10 +2313,10 @@ function App() {
     setMonacoApi(monaco)
     installGoNavigation(editor, monaco)
     installGoTodoDecorations(editor, monaco)
-    const testFileContext = editor.createContextKey<boolean>('mglandGoTestFile', false)
-    const sourceFileContext = editor.createContextKey<boolean>('mglandGoSourceFile', false)
-    const sourceMethodContext = editor.createContextKey<boolean>('mglandGoSourceMethod', false)
-    const gitFileContext = editor.createContextKey<boolean>('mglandGitWorkspaceFile', false)
+    const testFileContext = editor.createContextKey<boolean>('gomavoGoTestFile', false)
+    const sourceFileContext = editor.createContextKey<boolean>('gomavoGoSourceFile', false)
+    const sourceMethodContext = editor.createContextKey<boolean>('gomavoGoSourceMethod', false)
+    const gitFileContext = editor.createContextKey<boolean>('gomavoGitWorkspaceFile', false)
     const updateGoContexts = (line = editor.getPosition()?.lineNumber) => {
       const model = editor.getModel()
       const file = model ? tabsRef.current.find((item) => fileUri(item.path) === model.uri.toString()) : null
@@ -2344,9 +2344,9 @@ function App() {
     }
     editor.onDidChangeModelContent(() => scheduleGoContexts())
     editor.addAction({
-      id: 'mgland.run-go-test-context',
+      id: 'gomavo.run-go-test-context',
       label: '运行光标处测试方法或当前测试文件',
-      precondition: 'mglandGoTestFile',
+      precondition: 'gomavoGoTestFile',
       contextMenuGroupId: 'navigation',
       contextMenuOrder: 1,
       run: () => { runEditorContextRef.current?.() },
@@ -2356,7 +2356,7 @@ function App() {
     // is an Action2 invisible to editor.getAction, so trigger the underlying
     // EditorCommand directly.
     editor.addCommand(monaco.KeyMod.Alt | monaco.KeyCode.Enter, () => {
-      void editor.trigger('mgland', 'editor.action.codeAction', { kind: 'quickfix' })
+      void editor.trigger('gomavo', 'editor.action.codeAction', { kind: 'quickfix' })
     }, '!suggestWidgetVisible')
     editor.onDidChangeCursorPosition((event) => {
       setCursor({ line: event.position.lineNumber, column: event.position.column })
@@ -2430,25 +2430,25 @@ function App() {
     const editor = editorRef.current
     if (!editor || !monacoApi) return
     const methodAction = editor.addAction({
-      id: 'mgland.create-go-method-test',
+      id: 'gomavo.create-go-method-test',
       label: t('创建测试方法'),
-      precondition: 'mglandGoSourceFile && mglandGoSourceMethod',
+      precondition: 'gomavoGoSourceFile && gomavoGoSourceMethod',
       contextMenuGroupId: 'navigation',
       contextMenuOrder: 2,
       run: () => { createTestFromEditorRef.current?.(createTestContextLineRef.current ?? editor.getPosition()?.lineNumber) },
     })
     const fileAction = editor.addAction({
-      id: 'mgland.create-go-file-tests',
+      id: 'gomavo.create-go-file-tests',
       label: t('创建文件测试方法'),
-      precondition: 'mglandGoSourceFile && !mglandGoSourceMethod',
+      precondition: 'gomavoGoSourceFile && !gomavoGoSourceMethod',
       contextMenuGroupId: 'navigation',
       contextMenuOrder: 2,
       run: () => { createTestFromEditorRef.current?.() },
     })
     const historyAction = editor.addAction({
-      id: 'mgland.show-file-git-history',
+      id: 'gomavo.show-file-git-history',
       label: t('查看文件历史'),
-      precondition: 'mglandGitWorkspaceFile',
+      precondition: 'gomavoGitWorkspaceFile',
       contextMenuGroupId: 'navigation',
       contextMenuOrder: 3,
       run: () => {
@@ -2458,7 +2458,7 @@ function App() {
         if (path && isWorkspaceFile(rootRef.current, path)) openGitFileHistoryRef.current?.(path)
       },
     })
-    const goFileContext = editor.createContextKey<boolean>('mglandGoAnyFile', false)
+    const goFileContext = editor.createContextKey<boolean>('gomavoGoAnyFile', false)
     const syncAnyGoFile = () => {
       const model = editor.getModel()
       goFileContext.set(!!model && model.uri.scheme === 'file' && model.uri.path.endsWith('.go'))
@@ -2466,9 +2466,9 @@ function App() {
     syncAnyGoFile()
     const modelListener = editor.onDidChangeModel(syncAnyGoFile)
     const breakpointAction = editor.addAction({
-      id: 'mgland.toggle-breakpoint',
+      id: 'gomavo.toggle-breakpoint',
       label: t('切换断点'),
-      precondition: 'mglandGoAnyFile',
+      precondition: 'gomavoGoAnyFile',
       contextMenuGroupId: 'debug',
       contextMenuOrder: 1,
       // F9 stays unbound here: the global shortcut already handles it, and a
@@ -2482,7 +2482,7 @@ function App() {
       },
     })
     const bookmarkAction = editor.addAction({
-      id: 'mgland.toggle-bookmark',
+      id: 'gomavo.toggle-bookmark',
       label: t('切换书签'),
       contextMenuGroupId: 'navigation',
       contextMenuOrder: 4,
@@ -2495,9 +2495,9 @@ function App() {
       },
     })
     const blameAction = editor.addAction({
-      id: 'mgland.git-blame',
+      id: 'gomavo.git-blame',
       label: t('Git Blame（按行）'),
-      precondition: 'mglandGitWorkspaceFile',
+      precondition: 'gomavoGitWorkspaceFile',
       contextMenuGroupId: 'navigation',
       contextMenuOrder: 5,
       run: () => {
@@ -2511,9 +2511,9 @@ function App() {
       },
     })
     const findUsagesAction = editor.addAction({
-      id: 'mgland.find-usages',
+      id: 'gomavo.find-usages',
       label: t('查找用法'),
-      precondition: 'mglandGoAnyFile',
+      precondition: 'gomavoGoAnyFile',
       contextMenuGroupId: 'navigation',
       contextMenuOrder: 6,
       // No editor keybinding here: the global ⌥F7 shortcut already dispatches
@@ -2521,49 +2521,49 @@ function App() {
       run: () => { void runFindUsages() },
     })
     const extractVariableAction = editor.addAction({
-      id: 'mgland.refactor-extract-variable',
+      id: 'gomavo.refactor-extract-variable',
       label: locale === 'zh-CN' ? '重构：提取变量…' : 'Refactor: Extract Variable…',
-      precondition: 'mglandGoAnyFile && !editorReadonly',
+      precondition: 'gomavoGoAnyFile && !editorReadonly',
       contextMenuGroupId: '1_modification',
       contextMenuOrder: 2,
       run: () => { void runRefactor(['refactor.extract.variable', 'refactor.extract.constant'], /variable/i) },
     })
     const extractFunctionAction = editor.addAction({
-      id: 'mgland.refactor-extract-function',
+      id: 'gomavo.refactor-extract-function',
       label: locale === 'zh-CN' ? '重构：提取函数…' : 'Refactor: Extract Function…',
-      precondition: 'mglandGoAnyFile && !editorReadonly',
+      precondition: 'gomavoGoAnyFile && !editorReadonly',
       contextMenuGroupId: '1_modification',
       contextMenuOrder: 3,
       run: () => { void runRefactor(['refactor.extract.function', 'refactor.extract.method']) },
     })
     const goToImplementationAction = editor.addAction({
-      id: 'mgland.go-to-implementation',
+      id: 'gomavo.go-to-implementation',
       label: t('跳转到实现'),
-      precondition: 'mglandGoAnyFile',
+      precondition: 'gomavoGoAnyFile',
       contextMenuGroupId: 'navigation',
       contextMenuOrder: 7,
       run: () => { void goToImplementationNow() },
     })
     const goToTestAction = editor.addAction({
-      id: 'mgland.go-to-test',
+      id: 'gomavo.go-to-test',
       label: t('转到测试（或被测代码）'),
-      precondition: 'mglandGoAnyFile',
+      precondition: 'gomavoGoAnyFile',
       contextMenuGroupId: 'navigation',
       contextMenuOrder: 8,
       run: () => { void goToTestNow() },
     })
     const generateAction = editor.addAction({
-      id: 'mgland.generate-menu',
+      id: 'gomavo.generate-menu',
       label: t('Generate 生成…'),
-      precondition: 'mglandGoSourceFile || mglandGoTestFile',
+      precondition: 'gomavoGoSourceFile || gomavoGoTestFile',
       contextMenuGroupId: 'generate',
       contextMenuOrder: 0,
       run: () => { openPalette('generate') },
     })
     const editBreakpointAction = editor.addAction({
-      id: 'mgland.edit-breakpoint',
+      id: 'gomavo.edit-breakpoint',
       label: t('编辑断点条件'),
-      precondition: 'mglandGoAnyFile',
+      precondition: 'gomavoGoAnyFile',
       contextMenuGroupId: 'debug',
       contextMenuOrder: 2,
       run: () => {
@@ -2580,9 +2580,9 @@ function App() {
       },
     })
     const constructorAction = editor.addAction({
-      id: 'mgland.generate-constructor',
+      id: 'gomavo.generate-constructor',
       label: t('生成构造函数…'),
-      precondition: 'mglandGoSourceFile || mglandGoTestFile',
+      precondition: 'gomavoGoSourceFile || gomavoGoTestFile',
       contextMenuGroupId: 'generate',
       contextMenuOrder: 1,
       run: () => insertGenerated(editor, (source) => {
@@ -2592,9 +2592,9 @@ function App() {
       }),
     })
     const gettersAction = editor.addAction({
-      id: 'mgland.generate-getters',
+      id: 'gomavo.generate-getters',
       label: t('生成 Getter 方法…'),
-      precondition: 'mglandGoSourceFile || mglandGoTestFile',
+      precondition: 'gomavoGoSourceFile || gomavoGoTestFile',
       contextMenuGroupId: 'generate',
       contextMenuOrder: 2,
       run: () => insertGenerated(editor, (source) => {
@@ -2775,7 +2775,7 @@ function App() {
       { label: t('显示终端'), hint: t('命令行'), action: () => { setPanelOpen(true); setPanelView('terminal') }, icon: TerminalSquare },
       { label: t('刷新 Git 状态'), hint: t('版本控制'), action: () => { if (root) void refreshGit(root, { refreshIgnored: true }) }, icon: GitBranch },
       { label: '打开设置', hint: '⌘,', action: () => { setSettingsSection('editor'); setSettingsOpen(true) }, icon: Settings2 },
-      { label: '管理插件', hint: 'MGLand 原生插件与命令清单', action: () => { setSettingsSection('plugins'); setSettingsOpen(true) }, icon: Package },
+      { label: '管理插件', hint: 'GoMavo 原生插件与命令清单', action: () => { setSettingsSection('plugins'); setSettingsOpen(true) }, icon: Package },
     ]
     const pluginItems = pluginActions.map((item) => ({
       label: item.action.name,
@@ -2875,7 +2875,7 @@ function App() {
     setRevealPath(null)
   }, [expanded, revealPath, sideView, sidebarOpen, tree])
 
-  /** Open the project's MGLand style file inside its hidden config folder. */
+  /** Open the project's GoMavo style file inside its hidden config folder. */
   const openStyleFile = useCallback(async () => {
     if (!root) {
       notify(localeRef.current === 'zh-CN' ? '请先打开一个项目。' : 'Open a project first.', 'error')
@@ -2946,7 +2946,7 @@ function App() {
       case 'nav.forward': runShortcutAction('navigateForward'); break
       case 'code.organize-imports': void organizeCurrentFile(); break
       case 'code.format': void formatCurrentFile(); break
-      case 'code.quick-fix': editorRef.current?.trigger('mgland', 'editor.action.codeAction', { kind: 'quickfix' }); break
+      case 'code.quick-fix': editorRef.current?.trigger('gomavo', 'editor.action.codeAction', { kind: 'quickfix' }); break
       case 'code.run-intentions': openPalette('intentions'); break
       case 'code.cleanup': void codeCleanup(); break
       case 'refactor.rename': editorRef.current?.trigger('source', 'editor.action.rename', undefined); break

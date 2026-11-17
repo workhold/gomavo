@@ -92,7 +92,7 @@ export function installGoTodoDecorations(editor: Monaco.editor.IStandaloneCodeEd
     const source = model.getValue()
     decorations.set(goTodoMarkerRanges(source, monaco.editor.tokenize(source, 'go')).map((range) => ({
       range: new monaco.Range(range.lineNumber, range.startColumn, range.lineNumber, range.endColumn),
-      options: { inlineClassName: 'mgland-todo-marker' },
+      options: { inlineClassName: 'gomavo-todo-marker' },
     })))
   }
   const schedule = () => {

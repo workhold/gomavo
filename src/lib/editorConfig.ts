@@ -1,4 +1,4 @@
-/** The EditorConfig properties MGLand can apply to its Monaco editor and saves. */
+/** The EditorConfig properties GoMavo can apply to its Monaco editor and saves. */
 export type EditorConfigSettings = {
   indentStyle?: 'tab' | 'space'
   indentSize?: number | 'tab'
@@ -177,7 +177,7 @@ function relativeFile(root: string, path: string): string | null {
  * Resolve .editorconfig files from the target directory up to the workspace root.
  * The callback returns null for a missing .editorconfig file; other read errors should reject.
  * A root=true config stops the search inside the workspace. Parent folders outside the
- * workspace are intentionally inaccessible through MGLand's file commands.
+ * workspace are intentionally inaccessible through GoMavo's file commands.
  */
 export async function resolveEditorConfig(
   workspaceRoot: string,
@@ -241,7 +241,7 @@ export function applyEditorConfigToContent(content: string, settings: EditorConf
 
 /**
  * Parses GoLand's `.idea/codeStyles/Project.xml` for the basic indent
- * properties MGLand applies. Accepts both the global `<option>` entries and
+ * properties GoMavo applies. Accepts both the global `<option>` entries and
  * the per-language `<codeStyleSettings language="Go">` block (preferred).
  */
 export function parseGoLandCodeStyle(xml: string): Partial<EditorConfigSettings> {

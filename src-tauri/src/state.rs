@@ -188,7 +188,7 @@ mod tests {
             .duration_since(UNIX_EPOCH)
             .unwrap()
             .as_nanos();
-        let parent = env::temp_dir().join(format!("mgland-window-state-{nonce}"));
+        let parent = env::temp_dir().join(format!("gomavo-window-state-{nonce}"));
         let a_root = parent.join("alpha");
         let b_root = parent.join("beta");
         fs::create_dir_all(&a_root).unwrap();

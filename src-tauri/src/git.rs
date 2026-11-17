@@ -1218,7 +1218,7 @@ mod tests {
             .duration_since(UNIX_EPOCH)
             .unwrap()
             .as_nanos();
-        let base = env::temp_dir().join(format!("mgland-git-test-{}-{nonce}", std::process::id()));
+        let base = env::temp_dir().join(format!("gomavo-git-test-{}-{nonce}", std::process::id()));
         let project = base.join("repo").join("project");
         fs::create_dir_all(&project).unwrap();
         let initialized = command_for("git")
@@ -1247,7 +1247,7 @@ mod tests {
             .duration_since(UNIX_EPOCH)
             .unwrap()
             .as_nanos();
-        let base = env::temp_dir().join(format!("mgland-git-flow-{}-{nonce}", std::process::id()));
+        let base = env::temp_dir().join(format!("gomavo-git-flow-{}-{nonce}", std::process::id()));
         fs::create_dir_all(&base).unwrap();
         assert!(command_for("git")
             .current_dir(&base)
@@ -1256,7 +1256,7 @@ mod tests {
             .unwrap()
             .success());
         let root = fs::canonicalize(&base).unwrap();
-        git_result(git_output(&root, &["config", "user.name", "MG Land Test"]).unwrap()).unwrap();
+        git_result(git_output(&root, &["config", "user.name", "GoMavo Test"]).unwrap()).unwrap();
         git_result(git_output(&root, &["config", "user.email", "test@example.com"]).unwrap())
             .unwrap();
         fs::write(root.join("main.go"), "package main\n").unwrap();
@@ -1317,7 +1317,7 @@ mod tests {
             .unwrap()
             .as_nanos();
         let base = env::temp_dir().join(format!(
-            "mgland-git-file-history-{}-{nonce}",
+            "gomavo-git-file-history-{}-{nonce}",
             std::process::id()
         ));
         let project = base.join("project");
@@ -1330,7 +1330,7 @@ mod tests {
             .success());
         let repository = fs::canonicalize(&base).unwrap();
         let project = fs::canonicalize(project).unwrap();
-        git_result(git_output(&repository, &["config", "user.name", "MG Land Test"]).unwrap())
+        git_result(git_output(&repository, &["config", "user.name", "GoMavo Test"]).unwrap())
             .unwrap();
         git_result(git_output(&repository, &["config", "user.email", "test@example.com"]).unwrap())
             .unwrap();
@@ -1436,7 +1436,7 @@ mod tests {
             .duration_since(UNIX_EPOCH)
             .unwrap()
             .as_nanos();
-        let base = env::temp_dir().join(format!("mgland-git-scope-{}-{nonce}", std::process::id()));
+        let base = env::temp_dir().join(format!("gomavo-git-scope-{}-{nonce}", std::process::id()));
         let project = base.join("project");
         fs::create_dir_all(&project).unwrap();
         assert!(git_status_for_root(&project).is_err());
@@ -1484,7 +1484,7 @@ mod tests {
             .unwrap()
             .as_nanos();
         let base = env::temp_dir().join(format!(
-            "mgland-git-branches-{}-{nonce}",
+            "gomavo-git-branches-{}-{nonce}",
             std::process::id()
         ));
         let repository = base.join("repository");
@@ -1502,7 +1502,7 @@ mod tests {
         assert_eq!(unborn[0].name, initial);
         assert!(unborn[0].current);
 
-        git_result(git_output(&repository, &["config", "user.name", "MG Land Test"]).unwrap())
+        git_result(git_output(&repository, &["config", "user.name", "GoMavo Test"]).unwrap())
             .unwrap();
         git_result(git_output(&repository, &["config", "user.email", "test@example.com"]).unwrap())
             .unwrap();
@@ -1561,7 +1561,7 @@ mod tests {
             .duration_since(UNIX_EPOCH)
             .unwrap()
             .as_nanos();
-        let base = env::temp_dir().join(format!("mgland-{tag}-{}-{nonce}", std::process::id()));
+        let base = env::temp_dir().join(format!("gomavo-{tag}-{}-{nonce}", std::process::id()));
         fs::create_dir_all(&base).unwrap();
         assert!(command_for("git")
             .current_dir(&base)
@@ -1571,7 +1571,7 @@ mod tests {
             .success());
         let root = fs::canonicalize(&base).unwrap();
         for (key, value) in [
-            ("user.name", "MG Land Test"),
+            ("user.name", "GoMavo Test"),
             ("user.email", "test@example.com"),
         ] {
             git_result(git_output(&root, &["config", key, value]).unwrap()).unwrap();
@@ -1621,7 +1621,7 @@ mod tests {
     fn git_stash_push_for_test(root: &Path, message: Option<&str>) -> GitStatus {
         let output = git_command_base(root)
             .args(["stash", "push", "--include-untracked", "-m"])
-            .arg(message.unwrap_or("mgland"))
+            .arg(message.unwrap_or("gomavo"))
             .output()
             .unwrap();
         git_result(output).unwrap();
@@ -1694,7 +1694,7 @@ mod tests {
         assert_eq!(blame.lines[0].hash, first);
         assert_eq!(blame.lines[1].hash, second);
         let first_commit = &blame.commits[&first];
-        assert_eq!(first_commit.author, "MG Land Test");
+        assert_eq!(first_commit.author, "GoMavo Test");
         assert_eq!(first_commit.summary, "Initial");
         assert_eq!(blame.commits[&second].summary, "Touch");
         assert!(first_commit.date.starts_with("20"));

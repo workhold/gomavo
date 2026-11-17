@@ -1,7 +1,8 @@
 import type { GoPreferences } from './preferences'
 
-export const PROJECT_CODE_STYLE_DIRECTORY = '.mgland'
+export const PROJECT_CODE_STYLE_DIRECTORY = '.gomavo'
 export const PROJECT_CODE_STYLE_FILE = 'code-style.json'
+const LEGACY_PROJECT_CODE_STYLE_DIRECTORY = '.mgland'
 
 export interface ProjectCodeStyleIO {
   listDirectory(path: string): Promise<Array<{ name: string; is_dir: boolean }>>
@@ -28,12 +29,12 @@ export function projectCodeStylePath(root: string): string {
 export function parseProjectCodeStyle(content: string): Partial<GoPreferences> {
   const parsed: unknown = JSON.parse(content)
   if (!parsed || typeof parsed !== 'object' || (parsed as { version?: unknown }).version !== 1) {
-    throw new Error('Unsupported .mgland/code-style.json version')
+    throw new Error('Unsupported .gomavo/code-style.json version')
   }
   const go = (parsed as { go?: unknown }).go
   if (go === undefined) return {}
   if (!go || typeof go !== 'object' || Array.isArray(go)) {
-    throw new Error('Invalid .mgland/code-style.json Go settings')
+    throw new Error('Invalid .gomavo/code-style.json Go settings')
   }
   const source = go as Record<string, unknown>
   const result: Partial<GoPreferences> = {}
@@ -74,6 +75,36 @@ export async function loadProjectCodeStyleSnapshot(root: string, io: ProjectCode
   if (!await projectCodeStyleExists(root, io)) return null
   const content = await io.readFile(projectCodeStylePath(root))
   return { go: parseProjectCodeStyle(content), content }
+}
+
+/** Copy a previous release's project settings into the new directory once. */
+export async function migrateLegacyProjectCodeStyle(root: string, io: ProjectCodeStyleIO): Promise<ProjectCodeStyleSnapshot | null> {
+  const existing = await loadProjectCodeStyleSnapshot(root, io)
+  if (existing) return existing
+  const rootEntries = await io.listDirectory(root)
+  if (!rootEntries.some((entry) => entry.name === LEGACY_PROJECT_CODE_STYLE_DIRECTORY && entry.is_dir)) return null
+  const legacyDirectory = join(root, LEGACY_PROJECT_CODE_STYLE_DIRECTORY)
+  const legacyEntries = await io.listDirectory(legacyDirectory)
+  if (!legacyEntries.some((entry) => entry.name === PROJECT_CODE_STYLE_FILE && !entry.is_dir)) return null
+  const content = await io.readFile(join(legacyDirectory, PROJECT_CODE_STYLE_FILE))
+  const go = parseProjectCodeStyle(content)
+  const directory = join(root, PROJECT_CODE_STYLE_DIRECTORY)
+  if (!rootEntries.some((entry) => entry.name === PROJECT_CODE_STYLE_DIRECTORY && entry.is_dir)) {
+    if (rootEntries.some((entry) => entry.name === PROJECT_CODE_STYLE_DIRECTORY)) throw new Error(`${directory} is not a directory`)
+    try { await io.createDirectory(directory) }
+    catch (cause) {
+      const latest = await io.listDirectory(root)
+      if (!latest.some((entry) => entry.name === PROJECT_CODE_STYLE_DIRECTORY && entry.is_dir)) throw cause
+    }
+  }
+  try {
+    await io.createFile(projectCodeStylePath(root), content)
+    return { go, content }
+  } catch (cause) {
+    const concurrent = await loadProjectCodeStyleSnapshot(root, io)
+    if (concurrent) return concurrent
+    throw cause
+  }
 }
 
 /** Return null when the project has no own style file. */

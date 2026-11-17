@@ -417,7 +417,7 @@ mod tests {
 
     #[test]
     fn restored_intents_downgrade_missing_workspaces_to_welcome() {
-        let parent = std::env::temp_dir().join(format!("mgland-session-test-{}", std::process::id()));
+        let parent = std::env::temp_dir().join(format!("gomavo-session-test-{}", std::process::id()));
         fs::create_dir_all(&parent).unwrap();
         let project = parent.join("demo");
         fs::create_dir_all(&project).unwrap();

@@ -1,6 +1,6 @@
 import { command } from '../api'
 
-/** MGLand's own package format. This is not a VS Code or JetBrains extension. */
+/** GoMavo's own package format. This is not a VS Code or JetBrains extension. */
 export interface NativePluginManifest {
   id: string
   name: string

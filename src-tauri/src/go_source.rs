@@ -210,7 +210,7 @@ mod tests {
             .unwrap()
             .as_nanos();
         let base = env::temp_dir().join(format!(
-            "mgland-go-source-test-{}-{nonce}",
+            "gomavo-go-source-test-{}-{nonce}",
             std::process::id()
         ));
         let goroot = base.join("goroot");
@@ -248,7 +248,7 @@ mod tests {
             .unwrap()
             .as_nanos();
         let base =
-            env::temp_dir().join(format!("mgland-go-modules-{}-{nonce}", std::process::id()));
+            env::temp_dir().join(format!("gomavo-go-modules-{}-{nonce}", std::process::id()));
         let project = base.join("project");
         let replacement = base.join("replacement");
         let workspace_module = base.join("workspace-module");

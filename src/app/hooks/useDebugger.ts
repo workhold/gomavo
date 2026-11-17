@@ -262,8 +262,8 @@ export function useDebugger(params: UseDebuggerParams) {
       clientRef.current = client
       await client.request('initialize', {
         adapterID: 'delve',
-        clientID: 'mgland',
-        clientName: 'MGLand',
+        clientID: 'gomavo',
+        clientName: 'GoMavo',
         locale: 'en',
         linesStartAt1: true,
         columnsStartAt1: true,

@@ -1,8 +1,8 @@
 <div align="center">
 
-# MGLand
+# GoMavo
 
-**A GoLand-style Go IDE — a native desktop app with familiar JetBrains keybindings and no JVM.**
+**A focused, native Go IDE for macOS, powered by the Go toolchain.**
 
 Tauri 2 · React 19 · Monaco Editor · `gopls` · Delve
 
@@ -12,14 +12,14 @@ Tauri 2 · React 19 · Monaco Editor · `gopls` · Delve
 
 </div>
 
-MGLand is a focused Go IDE for macOS: one project per window, a layout and macOS keybindings that follow GoLand conventions, and the official Go toolchain underneath — `gopls` provides language services, Delve handles debugging, and the `go` CLI runs and tests your code. Everything runs locally: no accounts, no telemetry, no cloud.
+GoMavo is a focused Go IDE for macOS: one project per window, familiar macOS keyboard shortcuts, and the official Go toolchain underneath — `gopls` provides language services, Delve handles debugging, and the `go` CLI runs and tests your code. Everything runs locally: no accounts, no telemetry, no cloud.
 
 ## Features at a glance
 
-- **GoLand-style editing** — Project tree colored by Git status, tabbed editing, breadcrumb navigation, Double-Shift search everywhere, Go to File (⌘⇧O), Find Action (⌘⇧A), and back/forward navigation that restores cursor and scroll position.
+- **Fast editing** — Project tree colored by Git status, tabbed editing, breadcrumb navigation, Double-Shift search everywhere, Go to File (⌘⇧O), Find Action (⌘⇧A), and back/forward navigation that restores cursor and scroll position.
 - **Real Go language services** — completion, hover documentation, diagnostics, semantic highlighting, go to definition (Go SDK and module cache open as read-only tabs), and format-current-file, all via `gopls`.
-- **Built-in Delve debugger** — click the gutter to toggle breakpoints (GoLand-style; F9 works too), and ⌃D debugs the context under the cursor; call stack, variables, and a debug console live in the Debug tool window.
-- **GoLand-style testing** — quick-run icons in the gutter of `_test.go` files, ⌃R runs the test under the cursor or the whole file, results appear as a per-case tree with single-test rerun, and test coverage highlighting comes from `go test -cover`.
+- **Built-in Delve debugger** — click the gutter or press F9 to toggle breakpoints, and ⌃D debugs the context under the cursor; call stack, variables, and a debug console live in the Debug tool window.
+- **Integrated testing** — quick-run icons in the gutter of `_test.go` files, ⌃R runs the test under the cursor or the whole file, results appear as a per-case tree with single-test rerun, and test coverage highlighting comes from `go test -cover`.
 - **Git tool window** — branch switching, staged/unstaged changes with unified diffs, commit, recent history, per-file history, and line-by-line blame.
 - **Local-first everything** — an integrated PTY terminal, `go mod tidy/download`, `go vet`, `go fmt`, `.editorconfig` support, and a native plugin system. UI available in English and 简体中文.
 
@@ -35,9 +35,6 @@ MGLand is a focused Go IDE for macOS: one project per window, a layout and macOS
   <tr>
     <td width="50%"><img src="docs/images/gopls-hover.png" alt="gopls hover"><p align="center"><sub>Hover documentation from gopls</sub></p></td>
     <td width="50%"><img src="docs/images/terminal.png" alt="Terminal"><p align="center"><sub>Integrated terminal on a real PTY</sub></p></td>
-  </tr>
-  <tr>
-    <td colspan="2"><img src="docs/images/welcome.png" alt="Welcome page" width="60%"><p align="center"><sub>Welcome page — open an existing project or create a new one (one project per window)</sub></p></td>
   </tr>
 </table>
 
@@ -67,30 +64,32 @@ After launch, click the project name at the top left to choose "New Window", "Ne
 | Terminal | The Terminal tool window runs a shell in the project directory via xterm.js and a native PTY, with interactive input, resize handling, and restart after a session ends. |
 | Search and commands | Double-Shift searches files and actions; there are also ⌘⇧O Go to File, ⌘⌥O Go to Symbol, ⌘⇧F Find in Files, and ⌘E Recent Files. Enabled plugin commands also appear in action search. |
 | Bookmarks and local history | F3 toggles a bookmark on the current line; local edit history records changes per session and can show a diff per entry. |
-| Plugins | In Settings → Plugins, pick a local `.mgland-plugin` package or a JSON command manifest to import, enable/disable, and remove. Native plugins can register commands, Monaco completions, and hover providers; the JSON manifest only supports existing Go tasks or relative files inside the open project. See the [native plugin section](#mgland-native-plugins) below and the two examples. There is no online marketplace yet. |
+| Plugins | In Settings → Plugins, pick a local `.gomavo-plugin` package or a JSON command manifest to import, enable/disable, and remove. Native plugins can register commands, Monaco completions, and hover providers; the JSON manifest only supports existing Go tasks or relative files inside the open project. See the [native plugin section](#gomavo-native-plugins) below and the two examples. There is no online marketplace yet. |
 | Settings | The top gear icon, ⌘,, or the macOS app menu's Settings… opens settings; the left tree and search locate existing options, including compact mode, editor font size/line height/tab/minimap/wrapping, Project tree, Git auto refresh, terminal font size, UI language, keymap, and plugin management. Preferences persist in local app storage. The UI switches between Chinese and English; a few newer panels remain Chinese-only. |
 
 Modified tabs are saved before Go tasks run. The default build is the Go CLI's `go build ./...`, whose output behavior follows the Go toolchain and may create files in the project directory. Only one Go task runs at a time.
 
 ## How it compares with GoLand
 
-MGLand follows GoLand's layout, workflows, and macOS keybindings, but it is an independent implementation — not a clone, and not compatible with JetBrains plugins. It reuses the proven engines of the Go ecosystem (`gopls`, Delve, the `go` CLI), so day-to-day editing, testing, and debugging behave the way Go developers expect.
+GoMavo is independently developed and is not affiliated with or endorsed by JetBrains. The comparison below describes workflows and features; GoMavo does not run JetBrains plugins. It uses `gopls`, Delve, and the `go` CLI.
 
-**MGLand vs GoLand vs VS Code (Go extension)**
+GoLand is a trademark of JetBrains s.r.o. See the [JetBrains brand guidelines](https://www.jetbrains.com/company/brand/).
 
-| | MGLand | GoLand | VS Code + Go |
+**GoMavo vs GoLand vs VS Code (Go extension)**
+
+| | GoMavo | GoLand | VS Code + Go |
 | --- | --- | --- | --- |
 | Language engine | `gopls` (official LSP) | JetBrains' own Go engine | `gopls` |
 | Debugger | Delve (bundled in the app) | Delve-based | Delve |
 | Footprint | Native window + system WebView, no JVM | JVM-based (typically GBs) | Electron |
 | Startup | Seconds, no JVM boot | Tens of seconds | Seconds |
 | Refactoring | Basic (no rename/extract yet) | Full: rename, extract, inline, and more | Rename via `gopls` |
-| Plugin system | Own `.mgland-plugin` format | IntelliJ Marketplace (JVM) | VSIX marketplace |
+| Plugin system | Own `.gomavo-plugin` format | IntelliJ Marketplace (JVM) | VSIX marketplace |
 | License | MIT (open source) | Free for non-commercial; paid subscription for commercial use | Free |
 
 **Feature parity with GoLand** — an honest snapshot; ✅ done, ⚠️ partial, ❌ missing:
 
-| Area | MGLand | Notes |
+| Area | GoMavo | Notes |
 | --- | --- | --- |
 | Project tree, multi-window multi-project | ✅ | No GoLand project templates or multi-module workspace model ❌ |
 | Editing: completion / hover / diagnostics / semantic highlighting / formatting | ✅ | Via `gopls`; no Quick Fixes or intention actions ❌ |
@@ -106,9 +105,9 @@ The item-by-item comparison against **GoLand 2026.1.1** — including what was v
 
 ## Project code style
 
-Settings → Editor → Code Style writes current-project Go overrides to `.mgland/code-style.json`. Existing project overrides stored in browser local storage move there when the project opens. Optimize Imports uses gopls to sort imports in standard-library, third-party, then matching local-prefix groups, with one blank line between nonempty groups. The local-prefix field accepts comma-separated import paths. Those ordering and spacing rules are defined by gopls; the Code Style page shows them alongside the editable prefix and save action.
+Settings → Editor → Code Style writes current-project Go overrides to `.gomavo/code-style.json`. When a project opens, GoMavo copies any existing `.mgland/code-style.json` to the new path without deleting the old file. Older overrides stored in browser local storage migrate if neither project file exists. Optimize Imports uses gopls to sort imports in standard-library, third-party, then matching local-prefix groups, with one blank line between nonempty groups. The local-prefix field accepts comma-separated import paths. Those ordering and spacing rules are defined by gopls; the Code Style page shows them alongside the editable prefix and save action.
 
-After you create or edit `.editorconfig` in a project, MGLand merges configs from the project root and subdirectories by file path; closer configs win, and `root = true` stops the upward search. Supported keys are `indent_style`, `indent_size`, `tab_width`, `end_of_line`, `trim_trailing_whitespace`, and `insert_final_newline`, with `unset` restoring editor defaults. Indentation applies to open files; line-ending and whitespace rules apply on save, and saving an `.editorconfig` refreshes indentation for open files. Search stops at the current project directory, and files are still read and written as UTF-8.
+After you create or edit `.editorconfig` in a project, GoMavo merges configs from the project root and subdirectories by file path; closer configs win, and `root = true` stops the upward search. Supported keys are `indent_style`, `indent_size`, `tab_width`, `end_of_line`, `trim_trailing_whitespace`, and `insert_final_newline`, with `unset` restoring editor defaults. Indentation applies to open files; line-ending and whitespace rules apply on save, and saving an `.editorconfig` refreshes indentation for open files. Search stops at the current project directory, and files are still read and written as UTF-8.
 
 ```ini
 root = true
@@ -123,11 +122,11 @@ indent_style = tab
 tab_width = 4
 ```
 
-## MGLand native plugins
+## GoMavo native plugins
 
-Native plugins are MGLand's own `.mgland-plugin` ZIP packages whose root contains **exactly** two files, `manifest.json` and `main.js`. `main.js` is a single-file JavaScript ES module exporting `activate(context)`; it may also export `deactivate()`. The host runs each enabled, activated plugin in its own Web Worker. Plugins register capabilities through the API MGLand provides and never touch the editor DOM, Tauri commands, or Node.js APIs directly.
+Native plugins are GoMavo's own `.gomavo-plugin` ZIP packages whose root contains **exactly** two files, `manifest.json` and `main.js`. Existing `.mgland-plugin` packages remain importable. `main.js` is a single-file JavaScript ES module exporting `activate(context)`; it may also export `deactivate()`. The host runs each enabled, activated plugin in its own Web Worker. Plugins register capabilities through the API GoMavo provides and never touch the editor DOM, Tauri commands, or Node.js APIs directly.
 
-You can try it by importing [`examples/native-hello.mgland-plugin`](examples/native-hello.mgland-plugin) directly; the sources live in [`examples/native-hello`](examples/native-hello). In Settings → Plugins, choose the native plugin type and import the package from disk, then open a Go file, run "Plugin: Native Hello greet" from action search, or request completion for `mghello` in the editor. Importing a package with the same ID updates the plugin and keeps its enabled state; disabling or removing it unregisters its commands, completions, and hover providers.
+You can try it by importing [`examples/native-hello.gomavo-plugin`](examples/native-hello.gomavo-plugin) directly; the sources live in [`examples/native-hello`](examples/native-hello). In Settings → Plugins, choose the native plugin type and import the package from disk, then open a Go file, run "Plugin: Native Hello greet" from action search, or request completion for `gomavohello` in the editor. Importing a package with the same ID updates the plugin and keeps its enabled state; disabling or removing it unregisters its commands, completions, and hover providers.
 
 Example manifest:
 
@@ -160,18 +159,18 @@ Example manifest:
 
 ```bash
 cd examples/native-hello
-zip -X ../native-hello.mgland-plugin manifest.json main.js
+zip -X ../native-hello.gomavo-plugin manifest.json main.js
 ```
 
-Packages are capped at 1 MiB, manifests at 64 KiB, and scripts at 512 KiB. The Worker isolates editor APIs but is not a security sandbox; plugin code can still use browser networking, so only install packages you trust. The older [`examples/go-workflow.mgland-plugin.json`](examples/go-workflow.mgland-plugin.json) is a separate JSON command-manifest format that runs no custom scripts; import it from Settings → Plugins by choosing the JSON command type.
+Packages are capped at 1 MiB, manifests at 64 KiB, and scripts at 512 KiB. The Worker isolates editor APIs but is not a security sandbox; plugin code can still use browser networking, so only install packages you trust. The [`examples/go-workflow.gomavo-plugin.json`](examples/go-workflow.gomavo-plugin.json) file is a separate JSON command-manifest format that runs no custom scripts; import it from Settings → Plugins by choosing the JSON command type.
 
 ## GoLand and VS Code plugin compatibility
 
-MGLand cannot run JetBrains Marketplace GoLand ZIP/JAR plugins. Those plugins rely on the IntelliJ Platform's JVM class loaders, `plugin.xml` extension points, and IDE APIs; Go-specific plugins additionally depend on GoLand and `org.jetbrains.plugins.go`. MGLand's Tauri, Monaco, `gopls` host exposes none of those runtime surfaces, and wiring up Marketplace listing or download APIs would not make the plugins executable. See JetBrains' official docs on [plugin content](https://plugins.jetbrains.com/docs/intellij/plugin-content.html), [GoLand plugin development](https://plugins.jetbrains.com/docs/intellij/goland.html), and [plugin compatibility](https://plugins.jetbrains.com/docs/intellij/plugin-compatibility.html).
+GoMavo cannot run JetBrains Marketplace GoLand ZIP/JAR plugins. Those plugins rely on the IntelliJ Platform's JVM class loaders, `plugin.xml` extension points, and IDE APIs; Go-specific plugins additionally depend on GoLand and `org.jetbrains.plugins.go`. GoMavo's Tauri, Monaco, `gopls` host exposes none of those runtime surfaces, and wiring up Marketplace listing or download APIs would not make the plugins executable. See JetBrains' official docs on [plugin content](https://plugins.jetbrains.com/docs/intellij/plugin-content.html), [GoLand plugin development](https://plugins.jetbrains.com/docs/intellij/goland.html), and [plugin compatibility](https://plugins.jetbrains.com/docs/intellij/plugin-compatibility.html).
 
-VS Code VSIX extensions cannot be installed directly either: their `package.json`, extension host, and `vscode` API differ from this project's manifest and `context` API. MGLand native plugins borrow ideas from VS Code manifests, activation events, and registration surfaces, but code must be written or ported against the MGLand API.
+VS Code VSIX extensions cannot be installed directly either: their `package.json`, extension host, and `vscode` API differ from this project's manifest and `context` API. GoMavo native plugins borrow ideas from VS Code manifests, activation events, and registration surfaces, but code must be written or ported against the GoMavo API.
 
-You can migrate **data** such as keymaps or themes piece by piece, or extend MGLand's own plugin capabilities; neither equals compatibility with the original plugins. If you truly need to run original GoLand plugins, you would have to rebuild the IDE on the IntelliJ Platform and check versions, dependencies, and plugin licenses one by one.
+You can migrate **data** such as keymaps or themes piece by piece, or extend GoMavo's own plugin capabilities; neither equals compatibility with the original plugins. If you truly need to run original GoLand plugins, you would have to rebuild the IDE on the IntelliJ Platform and check versions, dependencies, and plugin licenses one by one.
 
 ## Default keyboard shortcuts
 
@@ -193,7 +192,7 @@ The current preset follows GoLand's **macOS default keymap**, not GoLand's optio
 | Format current Go file | ⌘⌥L | Open Settings | ⌘, |
 | Run all tests, Run with coverage, `go mod tidy` | Unbound by default; set your own |  |  |
 
-In a `_test.go` file, ⌃R runs the Test／Benchmark／Example／Fuzz method under the cursor, or the current test file when the cursor is outside a method, and ⌃D debugs that context with Delve. Other files still run the top configuration. Test methods can also be run from the gutter or the editor context menu. Monaco provides its own built-in editor actions; the table above covers only the keymap MGLand manages itself. ⌘⌥L formats the current editable Go file through `gopls`; the toolbar's "Go Tools → Format Code" still runs project-wide `go fmt ./...`.
+In a `_test.go` file, ⌃R runs the Test／Benchmark／Example／Fuzz method under the cursor, or the current test file when the cursor is outside a method, and ⌃D debugs that context with Delve. Other files still run the top configuration. Test methods can also be run from the gutter or the editor context menu. Monaco provides its own built-in editor actions; the table above covers only the keymap GoMavo manages itself. ⌘⌥L formats the current editable Go file through `gopls`; the toolbar's "Go Tools → Format Code" still runs project-wide `go fmt ./...`.
 
 Generated test methods are marked with `t.Skip("TODO: add test cases")` until you add cases; fill them in and run.
 
@@ -205,13 +204,13 @@ During development we made these first-hand observations of **GoLand 2026.1.1** 
 - In the `aidcanvas-backend` project, F12 jumped from `image_gen_impl.go` to the in-project `internal/model/models_provider.go`; and from `ark.NewImageGenerationModel` to `~/go/pkg/mod/github.com/cloudwego/eino-ext/.../image_generation_model.go`.
 - Settings includes Appearance & Behavior, Keymap, Editor, Plugins, Version Control, Build/Execution/Deployment, Languages & Frameworks, and more; the Plugins page offers Marketplace and local-install entries.
 
-These are **GoLand-side observations**. MGLand implements parts of the corresponding workflows with its own layout, `gopls` bridge, settings, and plugin format; this does not imply item-for-item compatibility or equal depth.
+These are **GoLand-side observations**. GoMavo implements parts of the corresponding workflows with its own layout, `gopls` bridge, settings, and plugin format; this does not imply item-for-item compatibility or equal depth.
 
 The following were verified in the macOS desktop package: Project tree file clicks, binary preview, Git file-status colors, `_test.go` icons, Go standard-library definition jumps, and `gopls` current-file formatting. Separately, with an isolated temporary Go project: package/method gutter runs, ⌃R context runs, result statuses, single-test and failed-test reruns, whole-file tests, a single Benchmark, Project tree collapse/locate, and Git label colors. This round added verification of new Go module creation, opening another project in an independent window, Project tree create/rename from context menus, and `.editorconfig` indentation refresh plus save rules; see the [parity document](docs/goland-parity.md). The new-window project picker was also verified in the macOS debug package: the top entries and ⌘N both open blank windows, the welcome page opens existing projects, and clicking New Project reaches the creation form. The Dock right-click entry is wired to a native menu, but automation tools cannot reach the Dock, so it has not been visually confirmed. Other workflows still need verification on target systems with real Go projects; browser previews and frontend builds do not prove that local Go, `gopls`, and Git workflows work.
 
 ## Not yet covered
 
-- JetBrains Marketplace, JVM ZIP/JAR plugin, and VS Code extension compatibility. MGLand accepts its own `.mgland-plugin` packages and JSON command manifests.
+- JetBrains Marketplace, JVM ZIP/JAR plugin, and VS Code extension compatibility. GoMavo accepts its own `.gomavo-plugin` packages and JSON command manifests.
 - GoLand's full refactoring capabilities, such as cross-project symbol rename, extract method, and safe call-site updates.
 - Advanced debugging: conditional breakpoints, goroutine view, core dump analysis.
 - Graphical Go module dependency management and a multi-workspace project model within one window. Module operations call the Go CLI; multiple projects open in separate windows.

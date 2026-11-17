@@ -101,7 +101,7 @@ mod tests {
             .duration_since(UNIX_EPOCH)
             .unwrap()
             .as_nanos();
-        let base = env::temp_dir().join(format!("mgland-path-test-{}-{nonce}", std::process::id()));
+        let base = env::temp_dir().join(format!("gomavo-path-test-{}-{nonce}", std::process::id()));
         let root = base.join("project");
         let outside = base.join("outside");
         fs::create_dir_all(&root).unwrap();

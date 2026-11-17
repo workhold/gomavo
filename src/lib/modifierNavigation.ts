@@ -79,7 +79,7 @@ export function installModifierNavigation(options: ModifierNavigationOptions): M
       decoration.set([{
         range: new monaco.Range(word.line, word.startColumn, word.line, word.endColumn),
         options: {
-          inlineClassName: 'mgland-navigation-link',
+          inlineClassName: 'gomavo-navigation-link',
           hoverMessage: { value: linkHint(atDeclaration) },
         },
       }])

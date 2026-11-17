@@ -116,7 +116,7 @@ pub fn run() {
             native_plugins::read_native_plugin_code,
         ])
         .build(tauri::generate_context!())
-        .expect("Failed to build MG Land")
+        .expect("Failed to build GoMavo")
         .run(|app, event| match event {
             // Quitting windows must stay in the session file; window teardown
             // that happens after this point is app shutdown, not a user close.

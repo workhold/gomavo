@@ -43,9 +43,12 @@ import 'monaco-editor/languages/definitions/hcl/register'
 import { loader } from '@monaco-editor/react'
 import EditorWorker from 'monaco-editor/editor/editor.worker?worker'
 import App from './App'
+import { migrateLegacyLocalStorage } from './lib/legacyStorage'
 import { installGoSyntaxFallback } from './lib/goHighlight'
 import { installProjectFileHighlight } from './lib/projectFileHighlight'
 import './styles.css'
+
+try { migrateLegacyLocalStorage(localStorage) } catch { /* storage may be unavailable */ }
 
 installGoSyntaxFallback(monaco)
 installProjectFileHighlight(monaco)

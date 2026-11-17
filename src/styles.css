@@ -1373,10 +1373,10 @@ html.theme-light .markdown-preview-pane { background: #ffffff; }
 .todo-line-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-muted); }
 .todo-keyword { color: #f2c45d; font-weight: 700; }
 html.theme-light .todo-keyword { color: #8c6200; }
-.monaco-editor .mgland-todo-marker { color: #f2c45d !important; font-weight: 700; }
-html.theme-light .monaco-editor .mgland-todo-marker { color: #8c6200 !important; }
+.monaco-editor .gomavo-todo-marker { color: #f2c45d !important; font-weight: 700; }
+html.theme-light .monaco-editor .gomavo-todo-marker { color: #8c6200 !important; }
 
-.monaco-editor .mgland-navigation-link { text-decoration: underline; text-underline-offset: 2px; cursor: pointer; color: var(--vscode-editorLink-activeForeground) !important; }
+.monaco-editor .gomavo-navigation-link { text-decoration: underline; text-underline-offset: 2px; cursor: pointer; color: var(--vscode-editorLink-activeForeground) !important; }
 
 /* Find Usages tool window. */
 .usages-pane { display: flex; flex-direction: column; height: 100%; min-height: 0; }

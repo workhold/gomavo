@@ -56,21 +56,21 @@ const ENGLISH: Record<string, string> = {
   '命令': 'Commands', '未声明命令。': 'No commands declared.',
   '激活事件': 'Activation events', '未声明激活事件。': 'No activation events declared.',
   '安装原生插件': 'Install native plugin',
-  '选择本地 .mgland-plugin 安装包。插件 JavaScript 将在 Worker 中运行。': 'Choose a local .mgland-plugin package. Plugin JavaScript runs in a Worker.',
+  '选择本地 .gomavo-plugin 安装包。插件 JavaScript 将在 Worker 中运行。': 'Choose a local .gomavo-plugin package. Plugin JavaScript runs in a Worker.',
   '已安装插件': 'Installed plugins', '搜索已安装插件': 'Search installed plugins',
   '搜索 JSON 命令插件': 'Search JSON command plugins', '本地命令': 'Local commands',
   '尚未安装命令插件。': 'No command plugins installed.', '插件命令': 'Plugin commands',
   '运行': 'Run', '打开 Go 项目后即可运行插件命令。': 'Open a Go project to run plugin commands.',
   '导入本地命令插件': 'Import local command plugin',
   '从 JSON 清单添加自己的 Go 工作流命令。': 'Add your own Go workflow commands from a JSON manifest.',
-  '原生插件 JavaScript 在 Worker 中运行；仅支持 .mgland-plugin 安装包，不兼容 VSIX 或 GoLand 插件。': 'Native plugin JavaScript runs in a Worker. Only .mgland-plugin packages are supported; VSIX and GoLand plugins are incompatible.',
-  'JSON 命令插件仅使用 MGLand 清单，不运行脚本。': 'JSON command plugins use MGLand manifests and do not run scripts.',
+  '原生插件 JavaScript 在 Worker 中运行；支持 .gomavo-plugin 和旧版 .mgland-plugin 安装包，不兼容 VSIX 或 GoLand 插件。': 'Native plugin JavaScript runs in a Worker. .gomavo-plugin and older .mgland-plugin packages are supported; VSIX and GoLand plugins are incompatible.',
+  'JSON 命令插件仅使用 GoMavo 清单，不运行脚本。': 'JSON command plugins use GoMavo manifests and do not run scripts.',
   '清单示例': 'Manifest example',
-  '导入 MGLand 插件': 'Install MGLand plugin', 'MGLand 插件': 'MGLand plugin',
-  '请选择 .mgland-plugin 安装包。': 'Choose a .mgland-plugin package.',
+  '导入 GoMavo 插件': 'Install GoMavo plugin', 'GoMavo 插件': 'GoMavo plugin',
+  '请选择 .gomavo-plugin 或旧版 .mgland-plugin 安装包。': 'Choose a .gomavo-plugin or older .mgland-plugin package.',
   '原生插件已启用。': 'Native plugin enabled.', '原生插件已停用。': 'Native plugin disabled.',
   '原生插件已移除。': 'Native plugin removed.',
-  '请选择 MGLand 的 .json 命令清单。JetBrains ZIP/JAR 插件不兼容。': 'Choose an MGLand .json command manifest. JetBrains ZIP/JAR plugins are incompatible.',
+  '请选择 GoMavo 的 .json 命令清单。JetBrains ZIP/JAR 插件不兼容。': 'Choose a GoMavo .json command manifest. JetBrains ZIP/JAR plugins are incompatible.',
   'JSON 清单不能超过 64 KB。': 'JSON manifests must be 64 KB or smaller.',
   '插件已启用。': 'Plugin enabled.', '插件已停用，命令已从搜索中移除。': 'Plugin disabled; its commands were removed from search.',
   '插件已移除。可以随时重新导入 JSON 清单。': 'Plugin removed. You can import its JSON manifest again.',
@@ -155,13 +155,13 @@ export function PluginsPane({ projectRoot, busy = false, nativePlugins, onNative
     setNativeBusy(true)
     try {
       const picked = await open({
-        title: t('导入 MGLand 插件'),
+        title: t('导入 GoMavo 插件'),
         multiple: false,
-        filters: [{ name: t('MGLand 插件'), extensions: ['mgland-plugin'] }],
+        filters: [{ name: t('GoMavo 插件'), extensions: ['gomavo-plugin', 'mgland-plugin'] }],
       })
       if (!picked) return
-      if (Array.isArray(picked) || !picked.toLowerCase().endsWith('.mgland-plugin')) {
-        throw new Error(t('请选择 .mgland-plugin 安装包。'))
+      if (Array.isArray(picked) || !/\.(?:gomavo|mgland)-plugin$/i.test(picked)) {
+        throw new Error(t('请选择 .gomavo-plugin 或旧版 .mgland-plugin 安装包。'))
       }
       const installed = await installNativePlugin(picked, true)
       await onNativePluginsChanged()
@@ -214,7 +214,7 @@ export function PluginsPane({ projectRoot, busy = false, nativePlugins, onNative
     setNotice(null)
     setPendingReplace(null)
     if (!file.name.toLowerCase().endsWith('.json')) {
-      setNotice({ kind: 'error', text: t('请选择 MGLand 的 .json 命令清单。JetBrains ZIP/JAR 插件不兼容。') })
+      setNotice({ kind: 'error', text: t('请选择 GoMavo 的 .json 命令清单。JetBrains ZIP/JAR 插件不兼容。') })
       return
     }
     if (file.size > 64 * 1024) {
@@ -364,7 +364,7 @@ export function PluginsPane({ projectRoot, busy = false, nativePlugins, onNative
                 ? <div className="mg-plugins-events">{nativeSelected.manifest.activationEvents.map((event) => <code key={event}>{event}</code>)}</div>
                 : <p className="mg-plugins-section-empty">{t('未声明激活事件。')}</p>}
             </section>
-          </> : <div className="mg-plugins-empty-detail"><Puzzle size={31} /><h3>{t('安装原生插件')}</h3><p>{t('选择本地 .mgland-plugin 安装包。插件 JavaScript 将在 Worker 中运行。')}</p><button type="button" disabled={nativeBusy} onClick={() => void importNative()}><Upload size={15} />{t('从磁盘安装')}</button></div>}
+          </> : <div className="mg-plugins-empty-detail"><Puzzle size={31} /><h3>{t('安装原生插件')}</h3><p>{t('选择本地 .gomavo-plugin 安装包。插件 JavaScript 将在 Worker 中运行。')}</p><button type="button" disabled={nativeBusy} onClick={() => void importNative()}><Upload size={15} />{t('从磁盘安装')}</button></div>}
         </div>
       </div>
       <div className="mg-plugins-body" role="tabpanel" id="mg-json-panel" aria-labelledby="mg-json-tab" hidden={activeTab !== 'json'}>
@@ -403,8 +403,8 @@ export function PluginsPane({ projectRoot, busy = false, nativePlugins, onNative
       </div>
       <footer className="mg-plugins-footer">
         {activeTab === 'native'
-          ? <span><ChevronRight size={13} />{t('原生插件 JavaScript 在 Worker 中运行；仅支持 .mgland-plugin 安装包，不兼容 VSIX 或 GoLand 插件。')}</span>
-          : <><span><ChevronRight size={13} />{t('JSON 命令插件仅使用 MGLand 清单，不运行脚本。')}</span><details><summary>{t('清单示例')}</summary><pre>{locale === 'en-US' ? EXAMPLE_EN : EXAMPLE}</pre></details></>}
+          ? <span><ChevronRight size={13} />{t('原生插件 JavaScript 在 Worker 中运行；支持 .gomavo-plugin 和旧版 .mgland-plugin 安装包，不兼容 VSIX 或 GoLand 插件。')}</span>
+          : <><span><ChevronRight size={13} />{t('JSON 命令插件仅使用 GoMavo 清单，不运行脚本。')}</span><details><summary>{t('清单示例')}</summary><pre>{locale === 'en-US' ? EXAMPLE_EN : EXAMPLE}</pre></details></>}
       </footer>
     </div>
   return embedded ? content : <div className="mg-plugins-backdrop" onMouseDown={(event) => {

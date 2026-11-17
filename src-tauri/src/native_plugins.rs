@@ -1,4 +1,4 @@
-//! Storage for MGLand's own JavaScript plugins. A package is a small ZIP with
+//! Storage for GoMavo's own JavaScript plugins. A package is a small ZIP with
 //! exactly `manifest.json` and `main.js`; archive entries are never extracted.
 
 use chrono::{SecondsFormat, Utc};
@@ -264,9 +264,9 @@ fn read_package(path: &Path) -> PluginResult<(NativePluginManifest, String)> {
     if !path
         .file_name()
         .and_then(|name| name.to_str())
-        .is_some_and(|name| name.ends_with(".mgland-plugin"))
+        .is_some_and(|name| name.ends_with(".gomavo-plugin") || name.ends_with(".mgland-plugin"))
     {
-        return Err("Choose a .mgland-plugin package".into());
+        return Err("Choose a .gomavo-plugin package (older .mgland-plugin packages also work)".into());
     }
     let bytes = read_regular_limited(path, MAX_PACKAGE_BYTES)?;
     let mut archive = ZipArchive::new(Cursor::new(bytes)).map_err(|error| error.to_string())?;
@@ -543,7 +543,7 @@ mod tests {
     #[test]
     fn package_accepts_only_the_two_expected_root_entries() {
         let path = std::env::temp_dir().join(format!(
-            "mgland-native-test-{}-{}.mgland-plugin",
+            "gomavo-native-test-{}-{}.gomavo-plugin",
             std::process::id(),
             NEXT_TEMP_ID.fetch_add(1, Ordering::Relaxed)
         ));
@@ -567,6 +567,10 @@ mod tests {
         let (parsed, code) = read_package(&path).unwrap();
         assert_eq!(parsed.id, "example.hello");
         assert!(code.contains("activate"));
+        let legacy_path = path.with_extension("mgland-plugin");
+        fs::copy(&path, &legacy_path).unwrap();
+        assert!(read_package(&legacy_path).is_ok());
+        fs::remove_file(legacy_path).unwrap();
         write_package(true);
         assert!(read_package(&path).is_err());
         fs::remove_file(path).unwrap();

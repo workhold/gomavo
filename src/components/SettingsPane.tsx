@@ -63,7 +63,7 @@ export const NAV_ITEMS: NavItem[] = [
     { id: 'editorFont', label: '字体', keywords: '字体大小 行高 font size line height' },
     { id: 'editorCodeStyle', label: '代码样式', keywords: 'Tab 宽度 插入空格 EditorConfig 缩进 import 顺序 分组 空行 code style tab indent spaces' },
   ] },
-  { id: 'plugins', label: '插件', keywords: '插件 安装 导入 原生 JSON marketplace 本地 .mgland-plugin Plugins Install from Disk' },
+  { id: 'plugins', label: '插件', keywords: '插件 安装 导入 原生 JSON marketplace 本地 .gomavo-plugin Plugins Install from Disk' },
   { id: 'versionControl', label: '版本控制', keywords: 'Git 自动刷新 version control refresh' },
   { id: 'runGroup', label: '构建、执行、部署', children: [
     { id: 'run', label: '运行与测试', keywords: '运行前保存 测试 编译 save before run build test deployment' },
@@ -75,7 +75,7 @@ export const NAV_ITEMS: NavItem[] = [
 
 const GROUPS = ['导航', '工具窗口', '代码', '运行'] as const
 const ENGLISH: Record<string, string> = {
-  '设置': 'Settings', '编辑器和快捷键': 'Configure MGLand for your workflow',
+  '设置': 'Settings', '编辑器和快捷键': 'Configure GoMavo for your workflow',
   '关闭设置': 'Close settings', '设置分类': 'Settings categories',
   '搜索设置': 'Search settings', '搜索设置…': 'Search settings…', '清除搜索': 'Clear search',
   '没有匹配的设置': 'No matching settings', '尝试搜索“插件”“字体”或“Go”': 'Try “plugins”, “font”, or “Go”',
@@ -85,7 +85,7 @@ const ENGLISH: Record<string, string> = {
   '已就绪': 'Ready', '启动中': 'Starting', '未安装': 'Not installed', '未连接': 'Not connected', '启动失败': 'Failed to start',
   '安装 gopls': 'Install gopls', '重启 gopls': 'Restart gopls',
   'Go 版本': 'Go version', '语言服务': 'Language server', '未检测到 Go 工具链': 'Go toolchain not found',
-  '安装 Go 后重启 MGLand，才能使用运行、测试和语言服务。': 'Install Go and restart MGLand to use run, test, and language services.',
+  '安装 Go 后重启 GoMavo，才能使用运行、测试和语言服务。': 'Install Go and restart GoMavo to use run, test, and language services.',
   '使用本机 Go 工具链与 gopls；此处显示当前检测结果。': 'Uses your local Go toolchain and gopls. Current detection is shown here.',
   '项目结构': 'Project Structure', '外观与行为': 'Appearance & Behavior', '按键映射': 'Keymap',
   '常规': 'General', '字体': 'Font', '代码样式': 'Code Style', '构建、执行、部署': 'Build, Execution, Deployment',
@@ -125,10 +125,10 @@ const ENGLISH: Record<string, string> = {
   '双击 Shift 可设为“搜索所有内容”；Esc 取消录制。系统或应用保留的组合键可能无法覆盖。': 'Press Shift twice to assign Search Everywhere. Esc cancels recording. System shortcuts may be unavailable.',
   '再按一次 ⇧': 'Press ⇧ again', '请按组合键…': 'Press shortcut…', '未设置': 'Unassigned',
   '正在录制快捷键': 'Recording shortcut', '恢复': 'Restore',
-  '界面语言': 'Interface language', '更改 MGLand 界面的显示语言': 'Change the language shown in MGLand',
+  '界面语言': 'Interface language', '更改 GoMavo 界面的显示语言': 'Change the language shown in GoMavo',
   '简体中文': 'Simplified Chinese', 'English': 'English',
   '本地命令插件': 'Local command plugins', '管理插件': 'Manage plugins',
-  '导入、启停或移除 MGLand JSON 命令扩展': 'Import, enable, disable or remove MGLand JSON command extensions',
+  '导入、启停或移除 GoMavo JSON 命令扩展': 'Import, enable, disable or remove GoMavo JSON command extensions',
   '导航': 'Navigation', '工具窗口': 'Tool Windows', '代码': 'Code', '运行': 'Run',
   '搜索所有内容': 'Search Everywhere', '打开文件与命令搜索': 'Search files and commands',
   '转到文件': 'Go to File', '搜索工作区文件': 'Search workspace files',
@@ -155,7 +155,7 @@ const ENGLISH: Record<string, string> = {
   '方案': 'Scheme', 'Go 风格设置对所有项目生效，或仅作用于当前项目': 'Go style settings apply to all projects or to the current project only.',
   '全局（所有项目）': 'Global (all projects)', '仅当前项目': 'Current project only',
   '当前项目覆盖': 'Project overrides', '{count} 项设置在当前项目使用独立值': '{count} settings use project-specific values', '还原全局默认': 'Restore global defaults',
-  '当前项目的 Go 设置保存在 .mgland/code-style.json；已有 .editorconfig 仍控制缩进、换行和空白规则。': 'Project Go settings are saved in .mgland/code-style.json; existing .editorconfig files still control indentation, line endings, and whitespace.',
+  '当前项目的 Go 设置保存在 .gomavo/code-style.json；已有 .editorconfig 仍控制缩进、换行和空白规则。': 'Project Go settings are saved in .gomavo/code-style.json; existing .editorconfig files still control indentation, line endings, and whitespace.',
   '打开或创建项目配置': 'Open or create project config',
   '制表符和缩进': 'Tabs and Indents', '导入': 'Imports', '其他': 'Other',
   '保存时整理 imports': 'Optimize imports on save', '对应 GoLand 的 Optimize imports：排序、按分组排列并删除未使用的导入': 'Matches GoLand’s Optimize Imports: sort, group, and drop unused imports',
@@ -391,7 +391,7 @@ export function SettingsPane({ preferences, onChange, onClose, initialSection, l
               <button type="button" className="mg-settings-action-button" onClick={() => onClearProjectGoOverrides?.()}>{t('还原全局默认')}</button>
             </div>}
             <div className="mg-settings-field">
-              <div><strong>.mgland/code-style.json</strong><span>{t('当前项目的 Go 设置保存在 .mgland/code-style.json；已有 .editorconfig 仍控制缩进、换行和空白规则。')}</span></div>
+              <div><strong>.gomavo/code-style.json</strong><span>{t('当前项目的 Go 设置保存在 .gomavo/code-style.json；已有 .editorconfig 仍控制缩进、换行和空白规则。')}</span></div>
               <button type="button" className="mg-settings-action-button" disabled={!hasProject} onClick={() => onOpenStyleFile?.()}>{t('打开或创建项目配置')}</button>
             </div>
             <div className="mg-settings-tabs" role="tablist" aria-label={t('代码样式')}>
@@ -460,7 +460,7 @@ export function SettingsPane({ preferences, onChange, onClose, initialSection, l
             <NumberSetting id="mg-setting-terminal-font-size" label={t('终端文字大小')} description={t('新终端会话和现有终端的文字大小')} value={preferences.terminal.fontSize} min={10} max={24} unit="px" onChange={(value) => updateTerminal('fontSize', value)} />
           </>}
           {section === 'language' && locale && onLocaleChange && <>
-            <div className="mg-settings-section-heading"><h3>{t('语言')}</h3><p>{t('更改 MGLand 界面的显示语言')}</p></div>
+            <div className="mg-settings-section-heading"><h3>{t('语言')}</h3><p>{t('更改 GoMavo 界面的显示语言')}</p></div>
             <div className="mg-settings-field">
               <label htmlFor="mg-setting-locale">{t('界面语言')}</label>
               <Dropdown ariaLabel={t('界面语言')} value={locale} options={[{ value: 'zh-CN', label: '简体中文' }, { value: 'en-US', label: 'English' }]} onChange={(next) => onLocaleChange(next as Locale)} />
@@ -477,7 +477,7 @@ export function SettingsPane({ preferences, onChange, onClose, initialSection, l
             </div>
           </>}
           {section === 'plugins' && pluginManager && <>
-            <div className="mg-settings-section-heading"><h3>{t('插件')}</h3><p>{t('导入、启停或移除 MGLand JSON 命令扩展')}</p></div>
+            <div className="mg-settings-section-heading"><h3>{t('插件')}</h3><p>{t('导入、启停或移除 GoMavo JSON 命令扩展')}</p></div>
             <PluginsPane {...pluginManager} embedded locale={locale} onClose={onClose} />
           </>}
           {section === 'shortcuts' && <>

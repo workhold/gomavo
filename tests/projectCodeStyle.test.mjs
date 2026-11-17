@@ -1,11 +1,11 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import {
-  createProjectCodeStyleIfMissing, loadProjectCodeStyle, loadProjectCodeStyleSnapshot, parseProjectCodeStyle, projectCodeStyleExists, projectCodeStylePath,
+  createProjectCodeStyleIfMissing, loadProjectCodeStyle, loadProjectCodeStyleSnapshot, migrateLegacyProjectCodeStyle, parseProjectCodeStyle, projectCodeStyleExists, projectCodeStylePath,
   saveProjectCodeStyle, serializeProjectCodeStyle,
 } from '../src/lib/projectCodeStyle.ts'
 
-test('project code style keeps supported Go overrides in .mgland/code-style.json', async () => {
+test('project code style keeps supported Go overrides in .gomavo/code-style.json', async () => {
   const files = new Map()
   const directories = new Set(['/project'])
   const io = {
@@ -38,7 +38,7 @@ test('project code style keeps supported Go overrides in .mgland/code-style.json
   const expected = files.get(projectCodeStylePath('/project'))
   await saveProjectCodeStyle('/project', { localPrefix: 'example.com/app', organizeImportsOnSave: false }, io, expected)
   assert.equal(await projectCodeStyleExists('/project', io), true)
-  assert.equal(projectCodeStylePath('/project'), '/project/.mgland/code-style.json')
+  assert.equal(projectCodeStylePath('/project'), '/project/.gomavo/code-style.json')
   assert.deepEqual(await loadProjectCodeStyle('/project', io), {
     organizeImportsOnSave: false,
     localPrefix: 'example.com/app',
@@ -57,7 +57,7 @@ test('migration creation preserves a style file written by another editor', asyn
   const io = {
     async listDirectory(directory) {
       return directory === '/project'
-        ? [{ name: '.mgland', is_dir: true }]
+        ? [{ name: '.gomavo', is_dir: true }]
         : [{ name: 'code-style.json', is_dir: false }]
     },
     async readFile() { return content },
@@ -70,6 +70,36 @@ test('migration creation preserves a style file written by another editor', asyn
   }
   assert.equal(await createProjectCodeStyleIfMissing('/project', { staticcheck: true }, io), false)
   assert.deepEqual(await loadProjectCodeStyle('/project', io), { staticcheck: false })
+})
+
+test('legacy project style is copied exactly, while a new file takes precedence', async () => {
+  const oldPath = '/project/.mgland/code-style.json'
+  const newPath = projectCodeStylePath('/project')
+  const oldContent = '{"version":1,"futureOption":7,"go":{"staticcheck":false}}\n'
+  const files = new Map([[oldPath, oldContent]])
+  const directories = new Set(['/project', '/project/.mgland'])
+  const io = {
+    async listDirectory(path) {
+      return [
+        ...[...directories].filter((entry) => entry !== path && entry.slice(0, entry.lastIndexOf('/')) === path)
+          .map((entry) => ({ name: entry.slice(entry.lastIndexOf('/') + 1), is_dir: true })),
+        ...[...files.keys()].filter((entry) => entry.slice(0, entry.lastIndexOf('/')) === path)
+          .map((entry) => ({ name: entry.slice(entry.lastIndexOf('/') + 1), is_dir: false })),
+      ]
+    },
+    async readFile(path) { return files.get(path) },
+    async createDirectory(path) { directories.add(path) },
+    async createFile(path, content) {
+      if (files.has(path)) throw new Error('file exists')
+      files.set(path, content)
+    },
+  }
+  assert.deepEqual((await migrateLegacyProjectCodeStyle('/project', io)).go, { staticcheck: false })
+  assert.equal(files.get(newPath), oldContent)
+  assert.equal(files.get(oldPath), oldContent)
+  files.set(newPath, serializeProjectCodeStyle({ gofumpt: true }))
+  assert.deepEqual((await migrateLegacyProjectCodeStyle('/project', io)).go, { gofumpt: true })
+  assert.equal(files.get(oldPath), oldContent)
 })
 
 test('checked settings save preserves newer JSON fields', async () => {

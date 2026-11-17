@@ -1,12 +1,12 @@
 [package]
-name = "mgland"
+name = "gomavo"
 version = "0.2.1"
 description = "A focused Go development environment"
-authors = ["MG Land contributors"]
+authors = ["GoMavo contributors"]
 edition = "2021"
 
 [lib]
-name = "mgland_lib"
+name = "gomavo_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]

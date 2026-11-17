@@ -1,4 +1,4 @@
-/** Settings supported by MGLand. Shortcuts use physical key names and macOS modifiers. */
+/** Settings supported by GoMavo. Shortcuts use physical key names and macOS modifiers. */
 export type ShortcutAction =
   | 'searchEverywhere'
   | 'quickOpen'
@@ -128,7 +128,7 @@ export interface ShortcutActionInfo {
   description: string
 }
 
-/** The default MGLand macOS keymap. */
+/** The default GoMavo macOS keymap. */
 export const DEFAULT_SHORTCUTS: Readonly<Record<ShortcutAction, Shortcut>> = {
   searchEverywhere: 'DoubleShift',
   quickOpen: 'Meta+Shift+O',
@@ -228,11 +228,11 @@ export const DEFAULT_PREFERENCES: Readonly<Preferences> = {
   shortcuts: DEFAULT_SHORTCUTS,
 }
 
-export const PREFERENCES_STORAGE_KEY = 'mgland.preferences.v1'
-export const PREFERENCES_CHANGED_EVENT = 'mgland:preferences-changed'
-const PROJECT_GO_STORAGE_KEY = 'mgland.project-go.v1'
+export const PREFERENCES_STORAGE_KEY = 'gomavo.preferences.v1'
+export const PREFERENCES_CHANGED_EVENT = 'gomavo:preferences-changed'
+const PROJECT_GO_STORAGE_KEY = 'gomavo.project-go.v1'
 
-/** Per-project Go style overrides (.mgland project scope), falling back to the global defaults. */
+/** Per-project Go style overrides (.gomavo project scope), falling back to the global defaults. */
 export function loadProjectGoOverrides(root: string | null): Partial<GoPreferences> {
   if (!root) return {}
   try {

@@ -88,7 +88,7 @@ export function TitleBar(props: TitleBarProps) {
     <div className="title-left" data-tauri-drag-region>
       <span className="traffic-lights" aria-hidden="true"><i /><i /><i /></span>
       <div className="project-menu-anchor"><button className="project-widget" type="button" title={locale === 'zh-CN' ? '项目操作' : 'Project actions'} aria-expanded={projectMenuOpen} onClick={(event) => { event.stopPropagation(); setProjectMenuOpen((current) => !current) }}>
-        <span className="brand-mark">Go</span><span className="project-name">{root ? displayName(root) : 'MGLand'}</span><ChevronDown size={13} />
+        <span className="brand-mark">Go</span><span className="project-name">{root ? displayName(root) : 'GoMavo'}</span><ChevronDown size={13} />
       </button>{projectMenuOpen && <div className="menu-popover project-menu" onClick={(event) => event.stopPropagation()}><button type="button" onClick={() => void openEmptyWindow()}><AppWindow size={14} />{t('新建窗口')}</button><div className="menu-divider" role="separator" /><button type="button" onClick={() => void openNewProject()}><FolderPlus size={14} />{locale === 'zh-CN' ? '新建项目…' : 'New Project…'}</button><button type="button" onClick={() => void chooseWorkspace()}><FolderOpen size={14} />{locale === 'zh-CN' ? '打开项目…' : 'Open Project…'}</button>{recentProjects.length > 0 && <>
         <div className="menu-divider" role="separator" />
         <div className="menu-title">{t('最近项目')}</div>

@@ -356,7 +356,7 @@ fn next_cover_profile_path() -> PathBuf {
         .unwrap_or_default()
         .as_nanos();
     std::env::temp_dir().join(format!(
-        "mgland-cover-{}-{nonce}.out",
+        "gomavo-cover-{}-{nonce}.out",
         std::process::id()
     ))
 }
@@ -637,7 +637,7 @@ mod tests {
             .unwrap()
             .as_nanos();
         let base =
-            env::temp_dir().join(format!("mgland-go-run-test-{}-{nonce}", std::process::id()));
+            env::temp_dir().join(format!("gomavo-go-run-test-{}-{nonce}", std::process::id()));
         let root = base.join("project");
         let package = root.join("cmd/app");
         fs::create_dir_all(&package).unwrap();
@@ -678,7 +678,7 @@ mod tests {
             .unwrap()
             .as_nanos();
         let base =
-            env::temp_dir().join(format!("mgland-run-extras-{nonce}-{}", std::process::id()));
+            env::temp_dir().join(format!("gomavo-run-extras-{nonce}-{}", std::process::id()));
         let package = base.join("cmd/app");
         fs::create_dir_all(&package).unwrap();
         fs::write(package.join("main.go"), "package main\nfunc main() {}\n").unwrap();
@@ -738,7 +738,7 @@ mod tests {
         // Coverage flags must precede the trailing package argument.
         assert_eq!(args.last().unwrap(), "./...");
         assert!(profile_index < args.len() - 1);
-        assert!(args[profile_index + 1].contains("mgland-cover-"));
+        assert!(args[profile_index + 1].contains("gomavo-cover-"));
         // programArgs stays rejected for tests.
         let invalid = TaskExtras {
             program_args: Some(vec!["x".to_string()]),

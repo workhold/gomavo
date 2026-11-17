@@ -1170,6 +1170,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "gomavo"
+version = "0.2.1"
+dependencies = [
+ "cc",
+ "chrono",
+ "libc",
+ "notify",
+ "portable-pty",
+ "regex",
+ "serde",
+ "serde_json",
+ "tauri",
+ "tauri-build",
+ "tauri-plugin-dialog",
+ "zip",
+]
+
+[[package]]
 name = "gtk"
 version = "0.18.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1864,24 +1882,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "488016bfae457b036d996092f6cb448677611ce4449e970ceaf42695203f218a"
 dependencies = [
  "autocfg",
-]
-
-[[package]]
-name = "mgland"
-version = "0.2.1"
-dependencies = [
- "cc",
- "chrono",
- "libc",
- "notify",
- "portable-pty",
- "regex",
- "serde",
- "serde_json",
- "tauri",
- "tauri-build",
- "tauri-plugin-dialog",
- "zip",
 ]
 
 [[package]]

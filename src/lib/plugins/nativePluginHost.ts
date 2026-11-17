@@ -61,7 +61,7 @@ function positionFor(position: monaco.Position): PluginPosition {
   return { lineNumber: position.lineNumber, column: position.column }
 }
 
-/** Runs MGLand-native, single-file browser extensions in individual Web Workers. */
+/** Runs GoMavo-native, single-file browser extensions in individual Web Workers. */
 export class NativePluginHost {
   private readonly states = new Map<string, RuntimeState>()
   private disposed = false

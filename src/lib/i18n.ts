@@ -1,6 +1,6 @@
 export type Locale = 'zh-CN' | 'en-US'
 
-const STORAGE_KEY = 'mgland.locale'
+const STORAGE_KEY = 'gomavo.locale'
 const DEFAULT_LOCALE: Locale = 'zh-CN'
 
 const dictionary = {
@@ -86,7 +86,7 @@ const dictionary = {
   '关闭 Project': { 'zh-CN': '关闭项目窗口', 'en-US': 'Close Project panel' },
   '关闭当前标签': { 'zh-CN': '关闭当前标签', 'en-US': 'Close current tab' },
   '关闭提示': { 'zh-CN': '关闭提示', 'en-US': 'Dismiss notification' },
-  '欢迎使用 MGLand': { 'zh-CN': '欢迎使用 MGLand', 'en-US': 'Welcome to MGLand' },
+  '欢迎使用 GoMavo': { 'zh-CN': '欢迎使用 GoMavo', 'en-US': 'Welcome to GoMavo' },
   '界面语言': { 'zh-CN': '界面语言', 'en-US': 'Interface language' },
   '静态检查': { 'zh-CN': '静态检查', 'en-US': 'Vet' },
   '空文件夹': { 'zh-CN': '空文件夹', 'en-US': 'Empty folder' },
@@ -277,7 +277,7 @@ const dictionary = {
   '启动 go run / go test 前自动保存未保存的修改': { 'zh-CN': '启动 go run / go test 前自动保存未保存的修改', 'en-US': 'Automatically save unsaved changes before go run / go test' },
   '已保存的运行配置': { 'zh-CN': '已保存的运行配置', 'en-US': 'Saved run configurations' },
   '{count} 个配置。通过顶栏运行配置菜单 → 编辑运行配置…管理': { 'zh-CN': '{count} 个配置。通过顶栏运行配置菜单 → 编辑运行配置…管理', 'en-US': '{count} configurations. Manage via the toolbar menu → Edit run configurations…' },
-  '导入、启停或移除 MGLand JSON 命令扩展': { 'zh-CN': '导入、启停或移除 MGLand JSON 命令扩展', 'en-US': 'Import, enable, or remove MGLand JSON command extensions' },
+  '导入、启停或移除 GoMavo JSON 命令扩展': { 'zh-CN': '导入、启停或移除 GoMavo JSON 命令扩展', 'en-US': 'Import, enable, or remove GoMavo JSON command extensions' },
   '重启 gopls': { 'zh-CN': '重启 gopls', 'en-US': 'Restart gopls' },
   'gopls 没有输出日志。': { 'zh-CN': 'gopls 没有输出日志。', 'en-US': 'gopls has no log output.' },
   '面包屑导航': { 'zh-CN': '面包屑导航', 'en-US': 'Breadcrumbs' },
@@ -298,7 +298,7 @@ const dictionary = {
   'gopls 启动中': { 'zh-CN': 'gopls 启动中', 'en-US': 'Starting gopls' },
   'gopls 尚未就绪，无法跳转定义。': { 'zh-CN': 'gopls 尚未就绪，无法跳转定义。', 'en-US': 'gopls is not ready; cannot go to definition.' },
   'gopls 未安装': { 'zh-CN': 'gopls 未安装', 'en-US': 'gopls not installed' },
-  'MGLand · Go 开发环境': { 'zh-CN': 'MGLand · Go 开发环境', 'en-US': 'MGLand · Go Development Environment' },
+  'GoMavo · Go 开发环境': { 'zh-CN': 'GoMavo · Go 开发环境', 'en-US': 'GoMavo · Go Development Environment' },
   'No recent projects': { 'zh-CN': '没有最近打开的项目', 'en-US': 'No recent projects' },
   'Open...': { 'zh-CN': '打开…', 'en-US': 'Open…' },
   'Problems': { 'zh-CN': '问题', 'en-US': 'Problems' },

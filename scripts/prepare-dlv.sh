@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Ensures a Delve (dlv) binary exists for bundling into MG Land.app.
+# Ensures a Delve (dlv) binary exists for bundling into GoMavo.app.
 # Reuses an existing copy; otherwise builds dlv via `go install`.
 set -euo pipefail
 

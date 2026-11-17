@@ -16,7 +16,7 @@ const safeName = (name: string) => name === name.trim() && !!name && name !== '.
 export function NewProjectDialog({ locale, onCancel, onCreated }: Props) {
   const zh = locale === 'zh-CN'
   const [name, setName] = useState('')
-  const [parent, setParent] = useState(() => localStorage.getItem('mgland.projectParent') ?? '')
+  const [parent, setParent] = useState(() => localStorage.getItem('gomavo.projectParent') ?? '')
   const [module, setModule] = useState('')
   const [nameTouched, setNameTouched] = useState(false)
   const [error, setError] = useState('')
@@ -63,7 +63,7 @@ export function NewProjectDialog({ locale, onCancel, onCreated }: Props) {
     setError('')
     try {
       const path = await command<string>('create_go_project', { parent, name, module: module.trim() || null })
-      localStorage.setItem('mgland.projectParent', parent)
+      localStorage.setItem('gomavo.projectParent', parent)
       await onCreated(path)
     } catch (cause) { setError(errorMessage(cause)) }
     finally { setBusy(false) }

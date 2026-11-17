@@ -107,7 +107,7 @@ export interface BottomPanelProps {
 
 const MIN_PANEL_HEIGHT = 160
 const DEFAULT_PANEL_HEIGHT = 246
-const PANEL_HEIGHT_STORAGE_KEY = 'mgland.bottomPanel.height'
+const PANEL_HEIGHT_STORAGE_KEY = 'gomavo.bottomPanel.height'
 
 function savedPanelHeight(): number {
   try {

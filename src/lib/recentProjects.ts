@@ -1,6 +1,6 @@
 // Recent-project tracking for the welcome screen and project menu.
 
-const STORAGE_KEY = 'mgland.recentProjects'
+const STORAGE_KEY = 'gomavo.recentProjects'
 const LIMIT = 10
 
 export function loadRecentProjects(): string[] {

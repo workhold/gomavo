@@ -1,12 +1,12 @@
 /**
- * MGLand's deliberately small local command extension format.
+ * GoMavo's deliberately small local command extension format.
  *
  * A manifest is data, never executable JavaScript or a shell command. The only
  * effects available to it are the host's existing Go tasks and opening a file
  * beneath the current project root. JetBrains JVM ZIP/JAR plugins are unrelated.
  */
 
-export const PLUGINS_STORAGE_KEY = 'mgland.plugins.v1'
+export const PLUGINS_STORAGE_KEY = 'gomavo.plugins.v1'
 
 export const GO_TASKS = [
   'run', 'test', 'build', 'fmt', 'vet', 'mod_tidy', 'mod_download',
@@ -149,7 +149,7 @@ export function parsePluginJson(text: string): PluginManifest {
   }
   let value: unknown
   try { value = JSON.parse(text) as unknown }
-  catch { throw new PluginError('INVALID_JSON', 'JSON 格式错误。请选择 MGLand 命令清单；JetBrains ZIP/JAR 插件不兼容。') }
+  catch { throw new PluginError('INVALID_JSON', 'JSON 格式错误。请选择 GoMavo 命令清单；JetBrains ZIP/JAR 插件不兼容。') }
   return validatePluginManifest(value)
 }
 

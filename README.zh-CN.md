@@ -1,8 +1,8 @@
 <div align="center">
 
-# MGLand
+# GoMavo
 
-**GoLand 风格的 Go IDE——原生桌面应用，JetBrains 熟悉的键位，没有 JVM。**
+**专注于 Go 开发的 macOS 原生 IDE，基于 Go 官方工具链。**
 
 Tauri 2 · React 19 · Monaco Editor · `gopls` · Delve
 
@@ -12,14 +12,14 @@ Tauri 2 · React 19 · Monaco Editor · `gopls` · Delve
 
 </div>
 
-MGLand 是一个面向 macOS 的专注型 Go IDE：每个窗口打开一个项目，布局与 macOS 键位沿用 GoLand 习惯，底层使用官方 Go 工具链——`gopls` 提供语言服务，Delve 负责调试，运行与测试调用 `go` CLI。所有功能全部本地运行：没有账号、没有遥测、没有云。
+GoMavo 是一个面向 macOS 的专注型 Go IDE：每个窗口打开一个项目，提供常用的 macOS 快捷键，底层使用官方 Go 工具链——`gopls` 提供语言服务，Delve 负责调试，运行与测试调用 `go` CLI。所有功能全部本地运行：没有账号、没有遥测、没有云。
 
 ## 特性速览
 
-- **GoLand 式编辑体验**——Project 树（按 Git 状态着色）、多标签编辑、面包屑导航、双击 Shift 全局搜索、转到文件（⌘⇧O）、查找操作（⌘⇧A）、后退／前进并恢复光标与滚动位置。
+- **高效编辑体验**——Project 树（按 Git 状态着色）、多标签编辑、面包屑导航、双击 Shift 全局搜索、转到文件（⌘⇧O）、查找操作（⌘⇧A）、后退／前进并恢复光标与滚动位置。
 - **真正的 Go 语言服务**——基于 `gopls` 的补全、悬停文档、诊断、语义高亮、跳转定义（Go SDK 与模块缓存以只读标签打开）和当前文件格式化。
-- **内置 Delve 调试器**——点击 gutter 即可切换断点（GoLand 风格，也可按 F9），⌃D 调试光标所在的测试或包；调用栈、变量与调试控制台都在 Debug 工具窗口中。
-- **GoLand 式测试工作流**——`_test.go` 的 gutter 快速运行图标，⌃R 运行光标所在测试或整个文件，结果以用例树展示并支持单项重跑，附带测试覆盖率高亮（`go test -cover`）。
+- **内置 Delve 调试器**——点击 gutter 或按 F9 切换断点，⌃D 调试光标所在的测试或包；调用栈、变量与调试控制台都在 Debug 工具窗口中。
+- **集成测试工作流**——`_test.go` 的 gutter 快速运行图标，⌃R 运行光标所在测试或整个文件，结果以用例树展示并支持单项重跑，附带测试覆盖率高亮（`go test -cover`）。
 - **Git 工具窗口**——分支切换、已暂存／未暂存改动与统一差异视图、提交、近期历史、文件历史与逐行 blame。
 - **一切本地化**——PTY 集成终端、`go mod tidy/download`、`go vet`、`go fmt`、`.editorconfig` 支持与原生插件系统。界面支持中文与 English。
 
@@ -35,9 +35,6 @@ MGLand 是一个面向 macOS 的专注型 Go IDE：每个窗口打开一个项�
   <tr>
     <td width="50%"><img src="docs/images/gopls-hover.png" alt="gopls 悬停"><p align="center"><sub>gopls 悬停文档</sub></p></td>
     <td width="50%"><img src="docs/images/terminal.png" alt="终端"><p align="center"><sub>基于真实 PTY 的集成终端</sub></p></td>
-  </tr>
-  <tr>
-    <td colspan="2"><img src="docs/images/welcome.png" alt="欢迎页" width="60%"><p align="center"><sub>欢迎页——打开已有项目或新建项目（每窗口一个项目）</sub></p></td>
   </tr>
 </table>
 
@@ -67,30 +64,32 @@ pnpm tauri dev
 | 终端 | Terminal 工具窗口以 xterm.js 和本机 PTY 运行项目目录中的 Shell，支持交互输入、窗口调整和会话结束后重启。 |
 | 搜索与命令 | 双击 Shift 搜索文件和操作；另有 ⌘⇧O 转到文件、⌘⌥O 转到符号、⌘⇧F 在文件中查找、⌘E 最近文件。已启用的插件命令也出现在操作搜索中。 |
 | 书签与本地历史 | F3 切换当前行书签；本地编辑历史按会话记录修改，可逐条查看差异。 |
-| 插件 | 在「设置 → 插件」选择本地 `.mgland-plugin` 安装包或 JSON 命令清单，可导入、启停和移除。原生插件可注册命令、Monaco 补全与悬停提示；JSON 清单只支持现有 Go 任务或打开项目内的相对路径文件。见下方的[原生插件说明](#mgland-原生插件)和两个示例。当前没有在线插件市场。 |
+| 插件 | 在「设置 → 插件」选择本地 `.gomavo-plugin` 安装包或 JSON 命令清单，可导入、启停和移除。原生插件可注册命令、Monaco 补全与悬停提示；JSON 清单只支持现有 Go 任务或打开项目内的相对路径文件。见下方的[原生插件说明](#gomavo-原生插件)和两个示例。当前没有在线插件市场。 |
 | 设置 | 顶部齿轮、⌘, 或 macOS 应用菜单的 Settings… 打开设置；左侧分组树与搜索用于定位现有选项，包括紧凑模式、编辑器字号/行高/Tab/缩略图/换行、项目树、Git 自动刷新、终端字号、界面语言、快捷键及插件管理。偏好保存在本机应用存储中。主界面可切换中文与 English；部分新面板仍使用中文。 |
 
 执行 Go 任务前会尝试保存已修改的标签。默认构建是 Go CLI 的 `go build ./...`，其输出行为遵循 Go 工具链，可能在项目目录生成文件。当前一次只运行一个 Go 任务。
 
 ## 与 GoLand 的对比
 
-MGLand 沿用 GoLand 的布局、工作流和 macOS 键位，但它是一个独立实现的程序——不是克隆，也不兼容 JetBrains 插件。它复用整个 Go 生态久经考验的引擎（`gopls`、Delve、`go` CLI），因此日常的编辑、测试和调试行为与 Go 开发者的预期一致。
+GoMavo 是独立开发的产品，与 JetBrains 没有关联或背书。下表仅用于说明工作流和功能差异；GoMavo 无法运行 JetBrains 插件。它使用 `gopls`、Delve 和 `go` CLI。
 
-**MGLand vs GoLand vs VS Code（Go 扩展）**
+GoLand 是 JetBrains s.r.o. 的商标。参见 [JetBrains 品牌指南](https://www.jetbrains.com/company/brand/)。
 
-| | MGLand | GoLand | VS Code + Go |
+**GoMavo vs GoLand vs VS Code（Go 扩展）**
+
+| | GoMavo | GoLand | VS Code + Go |
 | --- | --- | --- | --- |
 | 语言引擎 | `gopls`（官方 LSP） | JetBrains 自研 Go 引擎 | `gopls` |
 | 调试器 | Delve（应用内置） | 基于 Delve | Delve |
 | 运行开销 | 原生窗口 + 系统 WebView 界面，无 JVM | 基于 JVM（通常 GB 量级） | Electron |
 | 启动速度 | 秒级，无需启动 JVM | 数十秒 | 秒级 |
 | 重构能力 | 基础（暂无重命名/提取） | 重命名、提取、内联等完整能力 | 经 `gopls` 支持重命名 |
-| 插件体系 | 自有 `.mgland-plugin` 格式 | IntelliJ Marketplace（JVM） | VSIX 市场 |
+| 插件体系 | 自有 `.gomavo-plugin` 格式 | IntelliJ Marketplace（JVM） | VSIX 市场 |
 | 授权 | MIT（开源） | 非商用免费，商用需付费订阅 | 免费 |
 
 **与 GoLand 的功能对照**——诚实快照；✅ 已实现，⚠️ 部分，❌ 缺失：
 
-| 领域 | MGLand | 备注 |
+| 领域 | GoMavo | 备注 |
 | --- | --- | --- |
 | 项目树、多窗口多项目 | ✅ | 无 GoLand 项目模板与多模块工程模型 ❌ |
 | 编辑：补全 / 悬停 / 诊断 / 语义高亮 / 格式化 | ✅ | 经 `gopls`；无 Quick Fix 与意图操作 ❌ |
@@ -106,9 +105,9 @@ MGLand 沿用 GoLand 的布局、工作流和 macOS 键位，但它是一个独�
 
 ## 项目代码样式
 
-「设置 → 编辑器 → 代码样式」会把当前项目的 Go 风格覆盖值保存到 `.mgland/code-style.json`。项目打开时，旧版存于浏览器本地存储的覆盖值会迁移到此文件。保存时整理导入由 gopls 执行，顺序为标准库、第三方模块、匹配本地前缀的模块；非空分组之间保留一个空行，前缀可用逗号分隔。该顺序和空行规则由 gopls 定义，代码样式页面会展示规则及可编辑的本地前缀和保存动作。
+「设置 → 编辑器 → 代码样式」会把当前项目的 Go 风格覆盖值保存到 `.gomavo/code-style.json`。打开项目时，GoMavo 会把已有的 `.mgland/code-style.json` 复制到新路径，不删除旧文件；若两个项目文件均不存在，则迁移更早版本存于浏览器本地存储的覆盖值。保存时整理导入由 gopls 执行，顺序为标准库、第三方模块、匹配本地前缀的模块；非空分组之间保留一个空行，前缀可用逗号分隔。该顺序和空行规则由 gopls 定义，代码样式页面会展示规则及可编辑的本地前缀和保存动作。
 
-在项目中创建或编辑 `.editorconfig` 后，MGLand 会按文件路径合并项目根目录与子目录中的配置；更近的配置优先，`root = true` 会停止向上查找。支持 `indent_style`、`indent_size`、`tab_width`、`end_of_line`、`trim_trailing_whitespace` 和 `insert_final_newline`，也支持用 `unset` 恢复编辑器默认值。缩进设置会应用到打开的文件，换行和空白规则在保存时应用；保存 `.editorconfig` 后，已打开文件的缩进设置会刷新。搜索范围止于当前项目目录，文件仍按 UTF-8 读写。
+在项目中创建或编辑 `.editorconfig` 后，GoMavo 会按文件路径合并项目根目录与子目录中的配置；更近的配置优先，`root = true` 会停止向上查找。支持 `indent_style`、`indent_size`、`tab_width`、`end_of_line`、`trim_trailing_whitespace` 和 `insert_final_newline`，也支持用 `unset` 恢复编辑器默认值。缩进设置会应用到打开的文件，换行和空白规则在保存时应用；保存 `.editorconfig` 后，已打开文件的缩进设置会刷新。搜索范围止于当前项目目录，文件仍按 UTF-8 读写。
 
 ```ini
 root = true
@@ -123,11 +122,11 @@ indent_style = tab
 tab_width = 4
 ```
 
-## MGLand 原生插件
+## GoMavo 原生插件
 
-原生插件是 MGLand 自己的 `.mgland-plugin` ZIP 包，根目录**恰好**包含 `manifest.json` 和 `main.js` 两个文件。`main.js` 是单文件 JavaScript ES 模块，导出 `activate(context)`；可以另行导出 `deactivate()`。宿主为每个启用并激活的插件创建独立 Web Worker。插件通过 MGLand 提供的 API 注册能力，不直接访问编辑器 DOM、Tauri 命令或 Node.js API。
+原生插件是 GoMavo 自己的 `.gomavo-plugin` ZIP 包，根目录**恰好**包含 `manifest.json` 和 `main.js` 两个文件；已有的 `.mgland-plugin` 安装包仍可导入。`main.js` 是单文件 JavaScript ES 模块，导出 `activate(context)`；可以另行导出 `deactivate()`。宿主为每个启用并激活的插件创建独立 Web Worker。插件通过 GoMavo 提供的 API 注册能力，不直接访问编辑器 DOM、Tauri 命令或 Node.js API。
 
-可以直接导入 [`examples/native-hello.mgland-plugin`](examples/native-hello.mgland-plugin) 试用，源码位于 [`examples/native-hello`](examples/native-hello)。在「设置 → 插件」中选择原生插件并从磁盘导入安装包，然后打开 Go 文件，在操作搜索中执行「插件：Native Hello 打招呼」，或在编辑器中请求补全 `mghello`。同 ID 再导入会更新插件并保留启停状态；停用或移除会注销其命令、补全和悬停提示。
+可以直接导入 [`examples/native-hello.gomavo-plugin`](examples/native-hello.gomavo-plugin) 试用，源码位于 [`examples/native-hello`](examples/native-hello)。在「设置 → 插件」中选择原生插件并从磁盘导入安装包，然后打开 Go 文件，在操作搜索中执行「插件：Native Hello 打招呼」，或在编辑器中请求补全 `gomavohello`。同 ID 再导入会更新插件并保留启停状态；停用或移除会注销其命令、补全和悬停提示。
 
 插件清单示例：
 
@@ -160,18 +159,18 @@ tab_width = 4
 
 ```bash
 cd examples/native-hello
-zip -X ../native-hello.mgland-plugin manifest.json main.js
+zip -X ../native-hello.gomavo-plugin manifest.json main.js
 ```
 
-安装包上限为 1 MiB，清单上限为 64 KiB，脚本上限为 512 KiB。Worker 隔离编辑器 API，但不是安全沙箱；插件代码仍可能使用浏览器网络能力，因此只安装可信的安装包。旧的 [`examples/go-workflow.mgland-plugin.json`](examples/go-workflow.mgland-plugin.json) 是单独的 JSON 命令清单格式，不运行自定义脚本，可在「设置 → 插件」中选择 JSON 命令并导入。
+安装包上限为 1 MiB，清单上限为 64 KiB，脚本上限为 512 KiB。Worker 隔离编辑器 API，但不是安全沙箱；插件代码仍可能使用浏览器网络能力，因此只安装可信的安装包。[`examples/go-workflow.gomavo-plugin.json`](examples/go-workflow.gomavo-plugin.json) 是单独的 JSON 命令清单格式，不运行自定义脚本，可在「设置 → 插件」中选择 JSON 命令并导入。
 
 ## GoLand 与 VS Code 插件兼容性
 
-MGLand 目前不能直接运行 JetBrains Marketplace 的 GoLand ZIP/JAR 插件。此类插件通过 IntelliJ Platform 的 JVM 类加载器、`plugin.xml` 扩展点和 IDE API 工作；使用 Go 专属 API 的插件还依赖 GoLand 与 `org.jetbrains.plugins.go`。MGLand 的 Tauri、Monaco、`gopls` 宿主没有这些运行时接口。接入 Marketplace 的列表或下载接口也不会让插件可执行。参见 JetBrains 官方的[插件内容](https://plugins.jetbrains.com/docs/intellij/plugin-content.html)、[GoLand 插件开发](https://plugins.jetbrains.com/docs/intellij/goland.html)和[产品兼容性](https://plugins.jetbrains.com/docs/intellij/plugin-compatibility.html)说明。
+GoMavo 目前不能直接运行 JetBrains Marketplace 的 GoLand ZIP/JAR 插件。此类插件通过 IntelliJ Platform 的 JVM 类加载器、`plugin.xml` 扩展点和 IDE API 工作；使用 Go 专属 API 的插件还依赖 GoLand 与 `org.jetbrains.plugins.go`。GoMavo 的 Tauri、Monaco、`gopls` 宿主没有这些运行时接口。接入 Marketplace 的列表或下载接口也不会让插件可执行。参见 JetBrains 官方的[插件内容](https://plugins.jetbrains.com/docs/intellij/plugin-content.html)、[GoLand 插件开发](https://plugins.jetbrains.com/docs/intellij/goland.html)和[产品兼容性](https://plugins.jetbrains.com/docs/intellij/plugin-compatibility.html)说明。
 
-VS Code 的 VSIX 扩展也不能直接安装：其 `package.json`、扩展宿主和 `vscode` API 与本项目的清单及 `context` API 不同。MGLand 原生插件借鉴了 VS Code 的清单、激活事件和注册接口思路，但需要针对 MGLand API 编写或移植代码。
+VS Code 的 VSIX 扩展也不能直接安装：其 `package.json`、扩展宿主和 `vscode` API 与本项目的清单及 `context` API 不同。GoMavo 原生插件借鉴了 VS Code 的清单、激活事件和注册接口思路，但需要针对 GoMavo API 编写或移植代码。
 
-可逐项迁移键位、主题等**数据**，或扩展 MGLand 自己的插件能力；这两种方式都不等于兼容原版插件。若必须运行原版 GoLand 插件，需要以 IntelliJ Platform 为宿主重建 IDE，并逐个核对版本、依赖与插件许可。
+可逐项迁移键位、主题等**数据**，或扩展 GoMavo 自己的插件能力；这两种方式都不等于兼容原版插件。若必须运行原版 GoLand 插件，需要以 IntelliJ Platform 为宿主重建 IDE，并逐个核对版本、依赖与插件许可。
 
 ## 默认快捷键
 
@@ -193,7 +192,7 @@ VS Code 的 VSIX 扩展也不能直接安装：其 `package.json`、扩展宿主
 | 格式化当前 Go 文件 | ⌘⌥L | 打开设置 | ⌘, |
 | 运行全部测试、带覆盖率运行、`go mod tidy` | 默认未绑定，可自行设置 |  |  |
 
-在 `_test.go` 中，⌃R 会运行光标所在的 Test／Benchmark／Example／Fuzz 方法；光标不在方法内时运行当前测试文件，⌃D 则用 Delve 调试该上下文。其他文件仍运行顶部配置。测试方法也可从 gutter 或编辑器右键运行。Monaco 自身还提供编辑器内置操作；上表是 MGLand 自己管理的默认键位。⌘⌥L 通过 `gopls` 格式化当前可编辑的 Go 文件；顶部「Go 工具 → 格式化代码」仍运行项目级 `go fmt ./...`。
+在 `_test.go` 中，⌃R 会运行光标所在的 Test／Benchmark／Example／Fuzz 方法；光标不在方法内时运行当前测试文件，⌃D 则用 Delve 调试该上下文。其他文件仍运行顶部配置。测试方法也可从 gutter 或编辑器右键运行。Monaco 自身还提供编辑器内置操作；上表是 GoMavo 自己管理的默认键位。⌘⌥L 通过 `gopls` 格式化当前可编辑的 Go 文件；顶部「Go 工具 → 格式化代码」仍运行项目级 `go fmt ./...`。
 
 生成的测试方法会用 `t.Skip("TODO: add test cases")` 标记待填写，补上用例后再运行即可。
 
@@ -205,13 +204,13 @@ VS Code 的 VSIX 扩展也不能直接安装：其 `package.json`、扩展宿主
 - 在 `aidcanvas-backend` 项目中，F12 从 `image_gen_impl.go` 跳到项目内的 `internal/model/models_provider.go`；从 `ark.NewImageGenerationModel` 跳到 `~/go/pkg/mod/github.com/cloudwego/eino-ext/.../image_generation_model.go`。
 - Settings 包含 Appearance & Behavior、Keymap、Editor、Plugins、Version Control、Build/Execution/Deployment、Languages & Frameworks 等分类；插件页提供 Marketplace 和本地安装入口。
 
-这些是 **GoLand 侧的实机观察**。MGLand 以自己的布局、`gopls` 桥接、设置和插件格式实现了对应工作流的一部分，不表示逐项兼容或达到同等深度。
+这些是 **GoLand 侧的实机观察**。GoMavo 以自己的布局、`gopls` 桥接、设置和插件格式实现了对应工作流的一部分，不表示逐项兼容或达到同等深度。
 
 本轮已在 macOS 桌面包中验证项目树文件点击、二进制预览、Git 文件状态颜色、`_test.go` 图标、Go 标准库定义跳转和 `gopls` 当前文件格式化。另用隔离的临时 Go 项目验证了包／方法 gutter 运行、⌃R 上下文运行、结果状态、单测及失败项重跑、整文件测试、单个 Benchmark、项目树收起／定位和 Git 标签颜色。本次继续验证了新建 Go 模块、独立窗口打开另一个项目、项目树右键新建和重命名，以及 `.editorconfig` 的缩进刷新和保存规则；详见[功能对照](docs/goland-parity.md)。新窗口项目选择页也在 macOS 调试包中验证：顶部入口和 ⌘N 均打开空白窗口，欢迎页可打开已有项目，点击新建项目可进入创建表单。Dock 右键入口已接入原生菜单，但自动化工具无法访问 Dock，尚未直接目视验证。其他工作流仍需在目标系统与具体 Go 项目中验证；浏览器预览和前端构建不能证明本机 Go、`gopls` 与 Git 工作流正常运行。
 
 ## 当前未覆盖
 
-- JetBrains Marketplace、JVM ZIP/JAR 插件和 VS Code 扩展兼容。MGLand 接受自己的 `.mgland-plugin` 安装包和 JSON 命令清单。
+- JetBrains Marketplace、JVM ZIP/JAR 插件和 VS Code 扩展兼容。GoMavo 接受自己的 `.gomavo-plugin` 安装包和 JSON 命令清单。
 - GoLand 的完整重构能力，例如跨项目符号重命名、提取方法及安全修改调用点。
 - 调试高级功能：条件断点、goroutine 视图、core dump 分析。
 - 图形化 Go 模块依赖管理和单窗口内的多工作区工程模型。模块操作目前调用 Go CLI；多项目通过独立窗口打开。

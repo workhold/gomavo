@@ -247,7 +247,7 @@ export class GoplsClient {
         }
       }>('initialize', {
         processId: null,
-        clientInfo: { name: 'mgland', version: '0.1.0' },
+        clientInfo: { name: 'gomavo', version: '0.1.0' },
         rootUri: fileUri(this.root),
         workspaceFolders: [{ uri: fileUri(this.root), name: this.root.split('/').pop() || this.root }],
         initializationOptions: this.goplsSettingsPayload(),
@@ -1071,7 +1071,7 @@ export class GoplsClient {
   /** Run a selected cross-file lightbulb edit through the checked transaction. */
   private ensureWorkspaceEditCommand(): string {
     if (this.workspaceEditCommandId) return this.workspaceEditCommandId
-    const id = `mgland.gopls.workspaceEdit.${this.nextId}`
+    const id = `gomavo.gopls.workspaceEdit.${this.nextId}`
     this.workspaceEditCommandId = id
     this.disposables.push(this.monaco.editor.registerCommand(id, (
       _accessor,
@@ -1112,7 +1112,7 @@ export class GoplsClient {
    */
   private ensureServerCommand(): string {
     if (this.serverCommandId) return this.serverCommandId
-    const id = `mgland.gopls.command.${this.nextId}`
+    const id = `gomavo.gopls.command.${this.nextId}`
     this.serverCommandId = id
     this.disposables.push(this.monaco.editor.registerCommand(id, (_accessor, command: string, args: unknown[]) => {
       void (async () => {
@@ -1129,7 +1129,7 @@ export class GoplsClient {
   /** Editor command backing the synthesized "go get" quick fix for BrokenImport. */
   private ensureGoGetCommand(): string {
     if (this.goGetCommandId) return this.goGetCommandId
-    const id = `mgland.go.get.${this.nextId}`
+    const id = `gomavo.go.get.${this.nextId}`
     this.goGetCommandId = id
     this.disposables.push(this.monaco.editor.registerCommand(id, (_accessor, module: unknown) => {
       if (typeof module === 'string' && module) this.onMissingModule?.(module)

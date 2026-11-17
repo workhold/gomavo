@@ -7,7 +7,7 @@ import { build } from 'esbuild'
 import { compile } from 'monaco-editor/editor/standalone/common/monarch/monarchCompile'
 import { MonarchTokenizer } from 'monaco-editor/editor/standalone/common/monarch/monarchLexer'
 import { goTodoMarkerRanges, installGoSyntaxFallback } from '../src/lib/goHighlight.ts'
-import { defineMglandTheme } from '../src/lib/monacoTheme.ts'
+import { defineGomavoTheme } from '../src/lib/monacoTheme.ts'
 
 function fallbackTokens(lines) {
   let definition
@@ -43,8 +43,8 @@ test('Go fallback colors const declarations and TODO markers without gopls', () 
   assert.equal(tokenAt(rows[6], 6), 'receiver.go')
 
   const themes = new Map()
-  defineMglandTheme({ editor: { defineTheme(name, theme) { themes.set(name, theme) } } })
-  const dark = themes.get('mgland-dark')
+  defineGomavoTheme({ editor: { defineTheme(name, theme) { themes.set(name, theme) } } })
+  const dark = themes.get('gomavo-dark')
   assert.equal(dark.rules.find((rule) => rule.token === 'keyword.const').foreground, 'C792EA')
   assert.equal(dark.rules.find((rule) => rule.token === 'variable.readonly').foreground, 'C792EA')
   assert.equal(dark.rules.find((rule) => rule.token === 'comment.todo').foreground, 'F2C45D')

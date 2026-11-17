@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Ensures a gopls binary exists for bundling into MG Land.app.
+# Ensures a gopls binary exists for bundling into GoMavo.app.
 # Reuses an existing copy; otherwise builds gopls via `go install`.
 set -euo pipefail
 
