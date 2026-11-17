@@ -34,6 +34,7 @@ export interface SettingsPaneProps {
   goScope?: 'global' | 'project'
   onGoScopeChange?: (scope: 'global' | 'project') => void
   hasProject?: boolean
+  projectScopeAvailable?: boolean
   /** How many Go settings the project scheme overrides; 0 = inheriting global. */
   projectOverrideCount?: number
   onClearProjectGoOverrides?: () => void
@@ -60,7 +61,7 @@ export const NAV_ITEMS: NavItem[] = [
   { id: 'editorGroup', label: '编辑器', children: [
     { id: 'editorGeneral', label: '常规', keywords: '自动换行 缩略图 行号 空白字符 word wrap minimap line numbers whitespace' },
     { id: 'editorFont', label: '字体', keywords: '字体大小 行高 font size line height' },
-    { id: 'editorCodeStyle', label: '代码样式', keywords: 'Tab 宽度 插入空格 EditorConfig 缩进 code style tab indent spaces' },
+    { id: 'editorCodeStyle', label: '代码样式', keywords: 'Tab 宽度 插入空格 EditorConfig 缩进 import 顺序 分组 空行 code style tab indent spaces' },
   ] },
   { id: 'plugins', label: '插件', keywords: '插件 安装 导入 原生 JSON marketplace 本地 .mgland-plugin Plugins Install from Disk' },
   { id: 'versionControl', label: '版本控制', keywords: 'Git 自动刷新 version control refresh' },
@@ -150,15 +151,17 @@ const ENGLISH: Record<string, string> = {
   '停止任务': 'Stop Task', '停止当前运行或测试任务': 'Stop the current run or test task',
   '整理 Go 模块': 'Tidy Go Modules', '执行 go mod tidy': 'Run go mod tidy',
   '格式化、import 整理与代码风格在「代码样式 · Go」中按方案设置': 'Formatting, import optimizing, and code style live in Code Style · Go, organized by scheme',
-  '对齐 GoLand：缩进、导入分组与保存动作，支持全局或当前项目两种方案': 'GoLand-aligned: indentation, import grouping, and save actions, as a global or per-project scheme',
-  '方案': 'Scheme', '风格设置对所有项目生效，或仅作用于当前项目；新增的风格设置同样按方案区分': 'Style settings apply to all projects or to the current project only. New style settings follow the scheme.',
+  '缩进、导入分组与保存动作；Go 设置可使用全局或当前项目方案': 'Indentation, import grouping, and save actions; Go settings can use a global or project scheme',
+  '方案': 'Scheme', 'Go 风格设置对所有项目生效，或仅作用于当前项目': 'Go style settings apply to all projects or to the current project only.',
   '全局（所有项目）': 'Global (all projects)', '仅当前项目': 'Current project only',
   '当前项目覆盖': 'Project overrides', '{count} 项设置在当前项目使用独立值': '{count} settings use project-specific values', '还原全局默认': 'Restore global defaults',
-  '项目根目录的 .editorconfig 覆盖缩进、换行符与空白规则（GoLand 的 EditorConfig 方案）': 'A project-root .editorconfig overrides indentation, line endings, and whitespace rules (GoLand-style EditorConfig scheme)',
-  '打开或创建 .editorconfig': 'Open or create .editorconfig',
+  '当前项目的 Go 设置保存在 .mgland/code-style.json；已有 .editorconfig 仍控制缩进、换行和空白规则。': 'Project Go settings are saved in .mgland/code-style.json; existing .editorconfig files still control indentation, line endings, and whitespace.',
+  '打开或创建项目配置': 'Open or create project config',
   '制表符和缩进': 'Tabs and Indents', '导入': 'Imports', '其他': 'Other',
   '保存时整理 imports': 'Optimize imports on save', '对应 GoLand 的 Optimize imports：排序、按分组排列并删除未使用的导入': 'Matches GoLand’s Optimize Imports: sort, group, and drop unused imports',
-  '本地导入分组前缀': 'Local import prefix', '逗号分隔的模块路径，goimports 按其分组本地导入': 'Comma-separated module paths that goimports groups as local imports',
+  '导入顺序': 'Import order', '标准库 → 第三方模块 → 匹配本地前缀的模块；组内按路径排序。由 gopls 固定。': 'Standard library → third-party modules → modules matching the local prefix; sorted by path within each group. Fixed by gopls.',
+  '分组之间的空行': 'Blank lines between groups', '每两个非空导入组之间一个空行；组内无空行。由 gopls 固定。': 'One blank line separates each pair of nonempty import groups; no blank lines within a group. Fixed by gopls.',
+  '本地导入分组前缀': 'Local import prefix', '逗号分隔的模块路径；匹配的导入排在第三方模块之后': 'Comma-separated module paths; matching imports are placed after third-party modules',
   'gofumpt 严格代码风格': 'gofumpt strict code style', '在 gofmt 基础上套用更严格的风格规则（保存格式化时生效）': 'Stricter style rules on top of gofmt (applied when formatting on save)',
   'staticcheck 代码检查': 'staticcheck inspections', 'gopls 的 staticcheck 诊断与快速修复（对应 GoLand 的 inspection）': 'gopls staticcheck diagnostics and quick fixes (GoLand-style inspections)',
   'Inlay Hints 内联提示': 'Inlay hints', 'gopls 显示参数名、推断类型和常量值': 'gopls shows parameter names, inferred types, and constant values',
@@ -191,7 +194,7 @@ function NumberSetting({ id, label, description, value, min, max, unit, onChange
   </div>
 }
 
-export function SettingsPane({ preferences, onChange, onClose, initialSection, locale, onLocaleChange, versions, lspState, onInstallGopls, onRestartGopls, goToolBusy, onInstallTool, pluginManager, goScope, onGoScopeChange, hasProject, projectOverrideCount, onClearProjectGoOverrides, onOpenStyleFile }: SettingsPaneProps) {
+export function SettingsPane({ preferences, onChange, onClose, initialSection, locale, onLocaleChange, versions, lspState, onInstallGopls, onRestartGopls, goToolBusy, onInstallTool, pluginManager, goScope, onGoScopeChange, hasProject, projectScopeAvailable, projectOverrideCount, onClearProjectGoOverrides, onOpenStyleFile }: SettingsPaneProps) {
   const [section, setSection] = useState<Section>(initialSection ?? 'editor')
   const [styleTab, setStyleTab] = useState<StyleTab>('indent')
   const [recording, setRecording] = useState<ShortcutAction | null>(null)
@@ -378,18 +381,18 @@ export function SettingsPane({ preferences, onChange, onClose, initialSection, l
             </label>
           </>}
           {section === 'editorCodeStyle' && <>
-            <div className="mg-settings-section-heading"><h3>{t('代码样式')} · Go</h3><p>{t('对齐 GoLand：缩进、导入分组与保存动作，支持全局或当前项目两种方案')}</p></div>
+            <div className="mg-settings-section-heading"><h3>{t('代码样式')} · Go</h3><p>{t('缩进、导入分组与保存动作；Go 设置可使用全局或当前项目方案')}</p></div>
             <div className="mg-settings-field">
-              <div><label htmlFor="mg-setting-go-scheme">{t('方案')}</label><span>{t('风格设置对所有项目生效，或仅作用于当前项目；新增的风格设置同样按方案区分')}</span></div>
-              <Dropdown ariaLabel={t('方案')} value={goScope ?? 'global'} options={[{ value: 'global', label: t('全局（所有项目）') }, ...(hasProject ? [{ value: 'project', label: t('仅当前项目') }] : [])]} onChange={(next) => onGoScopeChange?.(next === 'project' ? 'project' : 'global')} />
+              <div><label htmlFor="mg-setting-go-scheme">{t('方案')}</label><span>{t('Go 风格设置对所有项目生效，或仅作用于当前项目')}</span></div>
+              <Dropdown ariaLabel={t('方案')} value={goScope ?? 'global'} options={[{ value: 'global', label: t('全局（所有项目）') }, ...(hasProject && projectScopeAvailable !== false ? [{ value: 'project', label: t('仅当前项目') }] : [])]} onChange={(next) => onGoScopeChange?.(next === 'project' ? 'project' : 'global')} />
             </div>
             {goScope === 'project' && (projectOverrideCount ?? 0) > 0 && <div className="mg-settings-field">
               <div><strong>{t('当前项目覆盖')}</strong><span>{t('{count} 项设置在当前项目使用独立值', { count: projectOverrideCount ?? 0 })}</span></div>
               <button type="button" className="mg-settings-action-button" onClick={() => onClearProjectGoOverrides?.()}>{t('还原全局默认')}</button>
             </div>}
             <div className="mg-settings-field">
-              <div><strong>{t('.editorconfig')}</strong><span>{t('项目根目录的 .editorconfig 覆盖缩进、换行符与空白规则（GoLand 的 EditorConfig 方案）')}</span></div>
-              <button type="button" className="mg-settings-action-button" onClick={() => onOpenStyleFile?.()}>{t('打开或创建 .editorconfig')}</button>
+              <div><strong>.mgland/code-style.json</strong><span>{t('当前项目的 Go 设置保存在 .mgland/code-style.json；已有 .editorconfig 仍控制缩进、换行和空白规则。')}</span></div>
+              <button type="button" className="mg-settings-action-button" disabled={!hasProject} onClick={() => onOpenStyleFile?.()}>{t('打开或创建项目配置')}</button>
             </div>
             <div className="mg-settings-tabs" role="tablist" aria-label={t('代码样式')}>
               {([['indent', '制表符和缩进'], ['imports', '导入'], ['other', '其他']] as [StyleTab, string][]).map(([id, label]) => <button key={id} type="button" role="tab" aria-selected={styleTab === id} className={styleTab === id ? 'active' : ''} onClick={() => setStyleTab(id)}>{t(label)}</button>)}
@@ -402,12 +405,18 @@ export function SettingsPane({ preferences, onChange, onClose, initialSection, l
               </label>
             </>}
             {styleTab === 'imports' && <>
+              <div className="mg-settings-field">
+                <div><strong>{t('导入顺序')}</strong><span>{t('标准库 → 第三方模块 → 匹配本地前缀的模块；组内按路径排序。由 gopls 固定。')}</span></div>
+              </div>
+              <div className="mg-settings-field">
+                <div><strong>{t('分组之间的空行')}</strong><span>{t('每两个非空导入组之间一个空行；组内无空行。由 gopls 固定。')}</span></div>
+              </div>
               <label className="mg-settings-field mg-settings-check-field">
                 <div><strong>{t('保存时整理 imports')}</strong><span>{t('对应 GoLand 的 Optimize imports：排序、按分组排列并删除未使用的导入')}</span></div>
                 <input type="checkbox" checked={preferences.go.organizeImportsOnSave} onChange={(event) => onChange({ ...preferences, go: { ...preferences.go, organizeImportsOnSave: event.target.checked } })} />
               </label>
               <div className="mg-settings-field">
-                <div><label htmlFor="mg-setting-local-prefix">{t('本地导入分组前缀')}</label><span>{t('逗号分隔的模块路径，goimports 按其分组本地导入')}</span></div>
+                <div><label htmlFor="mg-setting-local-prefix">{t('本地导入分组前缀')}</label><span>{t('逗号分隔的模块路径；匹配的导入排在第三方模块之后')}</span></div>
                 <input id="mg-setting-local-prefix" className="mg-settings-input" value={preferences.go.localPrefix} placeholder="my-company/internal" onChange={(event) => onChange({ ...preferences, go: { ...preferences.go, localPrefix: event.target.value } })} />
               </div>
             </>}

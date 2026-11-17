@@ -4,7 +4,7 @@ import { listen, type UnlistenFn } from '@tauri-apps/api/event'
 import { getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow'
 import type * as Monaco from 'monaco-editor'
 import { desktopAvailable, errorMessage } from '../../lib/api'
-import { GoplsClient, type DiagnosticEntry, type LspTextEdit } from '../../lib/lsp'
+import { GoplsClient, type DiagnosticEntry, type WorkspaceEditCallback } from '../../lib/lsp'
 import type { LspState, OpenFile } from '../types'
 import type { EditorNavigationLocation } from '../types'
 import type { MessageKey } from '../../lib/i18n'
@@ -21,14 +21,14 @@ export interface UseLspParams {
   navigationRequestRef: RefObject<number>
   activePath: string | null
   activePathRef: RefObject<string | null>
-  /** gopls settings applied on (re)start; changing it restarts the server. */
+  /** gopls setting applied on start; App pushes later changes through setConfig. */
   localPrefix: string
   /** gopls staticcheck lint diagnostics (default on). */
   staticcheck: boolean
   /** gopls gofumpt formatter (default off). */
   gofumpt: boolean
   /** Applies gopls workspace edits (rename/quick fix) across files. Assigned after this hook returns. */
-  workspaceEditsRef: RefObject<((changes: Record<string, LspTextEdit[]>) => Promise<void>) | null>
+  workspaceEditsRef: RefObject<WorkspaceEditCallback | null>
   /** Runs `go get` for a module picked from a synthesized BrokenImport quick fix. */
   missingModuleRef: RefObject<((module: string) => void) | null>
   notify: (text: string, kind?: 'success' | 'error') => void
@@ -84,10 +84,10 @@ export function useLsp(params: UseLspParams) {
     let failed = false
     const client = new GoplsClient(root, monacoApi, setDiagnostics, (message) => {
       if (!cancelled) { failed = true; setLspState('error'); setLspError(message) }
-    }, (target, source) => navigateTo(target, captureEditorLocation(source), true), (changes) => {
+    }, (target, source) => navigateTo(target, captureEditorLocation(source), true), (changes, options) => {
       const apply = workspaceEditsRef.current
       if (!apply) throw new Error('Workspace edits are not ready')
-      return apply(changes)
+      return apply(changes, options)
     }, (module) => missingModuleRef.current?.(module))
     lspRef.current = client
     client.setConfig({ localPrefix, staticcheck, gofumpt })
@@ -110,7 +110,7 @@ export function useLsp(params: UseLspParams) {
       }
     })
     return () => { cancelled = true; if (lspRef.current === client) lspRef.current = null; void client.stop() }
-  }, [root, monacoApi, goplsAvailable, lspEpoch, navigateTo, captureEditorLocation, workspaceEditsRef, localPrefix])
+  }, [root, monacoApi, goplsAvailable, lspEpoch, navigateTo, captureEditorLocation, workspaceEditsRef])
 
   useEffect(() => {
     if (root && goplsAvailable === undefined) return

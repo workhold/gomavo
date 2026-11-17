@@ -29,6 +29,9 @@ import type {
   RpcMessage,
 } from './protocol'
 import { fileUri, normalizePath, uriToPath } from './uri'
+import { workspaceEditChanges } from './workspaceEdit'
+import { goSourceDeclarations } from '../goTests'
+import { applyMonacoContentChanges } from './contentSync'
 
 type MonacoApi = typeof import('monaco-editor')
 
@@ -56,6 +59,12 @@ export interface WorkspaceSymbolEntry {
   column: number
 }
 
+interface CodeActionSnapshot {
+  sourceUri: string
+  sourceVersion: number | null
+  documentVersions: Map<string, number>
+}
+
 /** One row of the Structure tool window (flattened hierarchical symbols). */
 export interface StructureSymbol {
   name: string
@@ -70,7 +79,13 @@ export interface StructureSymbol {
 export type DiagnosticsCallback = (items: DiagnosticEntry[]) => void
 export type OpenDefinitionCallback = (target: DefinitionTarget, source: Monaco.editor.ICodeEditor) => boolean | Promise<boolean>
 /** Apply gopls edits (rename, quick fixes) across files, including unopened ones. */
-export type WorkspaceEditCallback = (changes: Record<string, LspTextEdit[]>) => Promise<void>
+export interface WorkspaceEditOptions {
+  /** Rename must never treat a failed read as permission to create a new file. */
+  requireExisting?: boolean
+  /** Recheck the source model while external files are being written. */
+  validate?: () => void
+}
+export type WorkspaceEditCallback = (changes: Record<string, LspTextEdit[]>, options?: WorkspaceEditOptions) => Promise<void>
 
 function endPosition(text: string): { line: number; character: number } {
   const lines = text.split('\n')
@@ -157,6 +172,7 @@ export class GoplsClient {
   private readonly onMissingModule?: (module: string) => void
   private readonly documents = new Map<string, OpenDocument>()
   private readonly diagnostics = new Map<string, LspDiagnostic[]>()
+  private readonly codeActionSnapshots = new WeakMap<LspCodeAction, CodeActionSnapshot>()
   private readonly semanticListeners = new Set<() => void>()
   private readonly pending = new Map<number, PendingRequest>()
   private readonly disposables: Monaco.IDisposable[] = []
@@ -173,8 +189,10 @@ export class GoplsClient {
   /** Last marker signature applied per URI: republished identical diagnostics skip setModelMarkers. */
   private lastMarkers = new Map<string, string>()
   private serverCommandId?: string
+  private workspaceEditCommandId?: string
   private goGetCommandId?: string
-  private goplsSettings: { staticcheck?: boolean; gofumpt?: boolean; localPrefix?: string[] } = {}
+  private goplsSettings: { staticcheck?: boolean; gofumpt?: boolean; local?: string } = {}
+  private settingsRevision = 0
 
   constructor(
     root: string,
@@ -221,6 +239,7 @@ export class GoplsClient {
         return invoke<void>('lsp_start', { root: this.root })
       })
       if (this.stopped) throw new Error('gopls client has stopped')
+      const initializedSettingsRevision = this.settingsRevision
       const result = await this.request<{
         capabilities?: {
           textDocumentSync?: number | { change?: number }
@@ -305,6 +324,11 @@ export class GoplsClient {
       if (this.stopped) throw new Error('gopls client has stopped')
       this.ready = true
       this.registerProviders()
+      // A setting edited while initialize was in flight was absent from its
+      // initializationOptions. Push the latest value once the server is ready.
+      if (this.settingsRevision !== initializedSettingsRevision) {
+        await this.notify('workspace/didChangeConfiguration', { settings: { gopls: this.goplsSettingsPayload() } })
+      }
     } catch (error) {
       await this.cleanup()
       throw new Error(`Unable to start gopls: ${error instanceof Error ? error.message : String(error)}`)
@@ -392,34 +416,36 @@ export class GoplsClient {
    * lag. Ranges refer to the pre-change document, so applying (and sending)
    * them back-to-front keeps every range valid.
    */
-  async changeDocumentIncremental(path: string, changes: readonly MonacoContentChange[]): Promise<void> {
+  async changeDocumentIncremental(path: string, changes: readonly MonacoContentChange[], currentText: string): Promise<void> {
     await this.start()
     const uri = fileUri(path)
+    // The editor may have advanced while gopls was starting. Its live model is
+    // authoritative; currentText is the snapshot from the triggering event.
+    const model = this.monaco.editor.getModel(this.monaco.Uri.parse(uri))
+    const text = model?.getValue() ?? currentText
     const document = this.documents.get(uri)
-    if (!document || !changes.length) return
-    const original = document.text
-    const lineStart = (line: number): number => {
-      let offset = 0
-      for (let remaining = line; remaining > 0; remaining -= 1) {
-        const next = original.indexOf('\n', offset)
-        if (next === -1) return original.length
-        offset = next + 1
-      }
-      return offset
+    if (!document) {
+      await this.openDocument(path, text)
+      return
     }
-    const items = changes.map((change) => ({
-      change,
-      start: lineStart(change.range.startLineNumber - 1) + change.range.startColumn - 1,
-      end: lineStart(change.range.endLineNumber - 1) + change.range.endColumn - 1,
-    })).sort((a, b) => b.start - a.start)
-    let text = original
-    for (const item of items) text = text.slice(0, item.start) + item.change.text + text.slice(item.end)
-    if (text === original) return
+    if (document.text === text) return
+    if (!changes.length) {
+      await this.changeDocument(path, text)
+      return
+    }
+    const original = document.text
+    // A missed edit (for example while didOpen was pending) makes Monaco's
+    // ranges relative to a different document. Send the current full text in
+    // that case so diagnostics are computed for what is actually on screen.
+    if (applyMonacoContentChanges(original, changes) !== text) {
+      await this.changeDocument(path, text)
+      return
+    }
     if (this.syncKind !== 2) {
       await this.changeDocument(path, text)
       return
     }
-    const contentChanges = items.map(({ change }) => ({
+    const contentChanges = [...changes].sort((left, right) => right.rangeOffset - left.rangeOffset).map((change) => ({
       range: {
         start: { line: change.range.startLineNumber - 1, character: change.range.startColumn - 1 },
         end: { line: change.range.endLineNumber - 1, character: change.range.endColumn - 1 },
@@ -654,31 +680,67 @@ export class GoplsClient {
 
     // --- Rename refactoring (F2) -------------------------------------------
     this.disposables.push(this.monaco.languages.registerRenameProvider('go', {
-      provideRenameEdits: async (model, position, newName) => {
+      provideRenameEdits: async (model, position, newName, token) => {
         if (!this.owns(model.uri.toString())) return null
         try {
+          const sourceVersion = model.getVersionId()
+          const sourceText = model.getValue()
+          const validateSource = () => {
+            if (token.isCancellationRequested || model.isDisposed() || model.getVersionId() !== sourceVersion) {
+              throw new Error('Source file changed while rename was running; retry the rename')
+            }
+          }
           await this.syncModel(model)
+          validateSource()
+          const documentVersions = new Map([...this.documents].map(([uri, document]) => [uri, document.version]))
           const edit = await this.request<LspWorkspaceEdit | null>('textDocument/rename', {
             textDocument: { uri: model.uri.toString() },
             position: { line: position.lineNumber - 1, character: position.column - 1 },
             newName,
           })
+          validateSource()
           if (!edit) return null
-          const changes = this.workspaceEditChanges(edit)
+          const changes = workspaceEditChanges(edit)
+          const validateRename = () => {
+            validateSource()
+            for (const uri of Object.keys(changes)) {
+              if (documentVersions.get(uri) !== this.documents.get(uri)?.version) {
+                throw new Error('A file changed while rename was running; retry the rename')
+              }
+            }
+          }
+          for (const change of edit.documentChanges ?? []) {
+            const uri = change.textDocument?.uri
+            const version = change.textDocument?.version
+            if (uri && version != null && version !== this.documents.get(uri)?.version) {
+              throw new Error('A file changed while rename was running; retry the rename')
+            }
+          }
+          validateRename()
           const current = model.uri.toString()
           const others = Object.fromEntries(Object.entries(changes).filter(([uri]) => uri !== current))
-          if (Object.keys(others).length && this.onWorkspaceEdit) await this.onWorkspaceEdit(others)
-          const modelEdits = (changes[current] ?? []).map((textEdit) => ({
+          const sourceEdits = changes[current] ?? []
+          if (Object.keys(others).length && !sourceEdits.length) {
+            throw new Error('Rename returned no edit for the source file; no files were changed')
+          }
+          // Reject bad source ranges before touching any other file.
+          applyTextEdits(sourceText, sourceEdits)
+          if (Object.keys(others).length) {
+            if (!this.onWorkspaceEdit) throw new Error('Workspace edits are not ready')
+            await this.onWorkspaceEdit(others, { requireExisting: true, validate: validateRename })
+            validateSource()
+          }
+          const modelEdits = sourceEdits.map((textEdit) => ({
             resource: model.uri,
             textEdit: {
               range: this.toMonacoRange(textEdit.range),
               text: textEdit.newText,
             },
-            versionId: undefined,
+            versionId: sourceVersion,
           }))
           return modelEdits.length ? { edits: modelEdits } : null
-        } catch {
-          return null
+        } catch (error) {
+          return { edits: [], rejectReason: error instanceof Error ? error.message : String(error) }
         }
       },
       resolveRenameLocation: async (model, position) => {
@@ -712,7 +774,10 @@ export class GoplsClient {
       provideCodeActions: async (model, range) => {
         if (!this.owns(model.uri.toString())) return null
         try {
+          const sourceVersion = model.getVersionId()
           await this.syncModel(model)
+          if (model.isDisposed() || model.getVersionId() !== sourceVersion) return null
+          const documentVersions = new Map([...this.documents].map(([uri, document]) => [uri, document.version]))
           // gopls matches quick fixes to the exact diagnostics it published
           // (their payloads ride in the diagnostic's data field), so forward
           // the raw diagnostics overlapping the selection rather than
@@ -729,16 +794,31 @@ export class GoplsClient {
             range: requested,
             context: { diagnostics, only: undefined },
           })
+          if (model.isDisposed() || model.getVersionId() !== sourceVersion) return null
           const mapped: Monaco.languages.CodeAction[] = []
           for (const action of actions ?? []) {
             if (action.edit) {
-              const changes = this.workspaceEditChanges(action.edit)
+              let changes: Record<string, LspTextEdit[]>
+              try { changes = workspaceEditChanges(action.edit) }
+              catch { continue }
               const current = model.uri.toString()
               const others = Object.fromEntries(Object.entries(changes).filter(([uri]) => uri !== current))
-              if (Object.keys(others).length && this.onWorkspaceEdit) {
-                // The lightbulb applies other files immediately; the current
-                // model keeps its edit for Monaco's undo stack.
-                void this.onWorkspaceEdit(others).catch(() => undefined)
+              if (Object.keys(others).length) {
+                if (!this.onWorkspaceEdit) continue
+                // Only the selected action may mutate external files. Applying
+                // them while listing lightbulb choices can change files even
+                // when the user dismisses the menu.
+                mapped.push({
+                  title: action.title,
+                  kind: action.kind,
+                  isPreferred: action.isPreferred,
+                  command: {
+                    id: this.ensureWorkspaceEditCommand(),
+                    title: action.title,
+                    arguments: [changes, current, sourceVersion, documentVersions, action.command],
+                  },
+                })
+                continue
               }
               const modelEdits = (changes[current] ?? []).map((textEdit) => ({
                 resource: model.uri,
@@ -746,14 +826,21 @@ export class GoplsClient {
                   range: this.toMonacoRange(textEdit.range),
                   text: textEdit.newText,
                 },
-                versionId: undefined,
+                versionId: sourceVersion,
               }))
-              if (modelEdits.length) {
+              if (modelEdits.length || action.command) {
                 mapped.push({
                   title: action.title,
                   kind: action.kind,
                   isPreferred: action.isPreferred,
-                  edit: { edits: modelEdits },
+                  ...(modelEdits.length ? { edit: { edits: modelEdits } } : {}),
+                  ...(action.command ? {
+                    command: {
+                      id: this.ensureServerCommand(),
+                      title: action.title,
+                      arguments: [action.command.command, action.command.arguments ?? []],
+                    },
+                  } : {}),
                 })
               }
               continue
@@ -886,7 +973,7 @@ export class GoplsClient {
     }))
 
     if (this.semanticLegend) {
-      const legendTypes = [...this.semanticLegend.tokenTypes, 'qualifiedCall']
+      const legendTypes = [...this.semanticLegend.tokenTypes, 'qualifiedCall', 'receiver']
       const legendModifiers = this.semanticLegend.tokenModifiers ?? []
       this.disposables.push(this.monaco.languages.registerDocumentSemanticTokensProvider('go', {
         onDidChange: (listener) => {
@@ -904,7 +991,7 @@ export class GoplsClient {
               { textDocument: { uri: model.uri.toString() } },
               20000,
             )
-            return tokens ? { resultId: tokens.resultId, data: this.annotateCallSites(Uint32Array.from(tokens.data)) } : null
+            return tokens ? { resultId: tokens.resultId, data: this.annotateCallSites(Uint32Array.from(tokens.data), model) } : null
           } catch {
             return null
           }
@@ -923,16 +1010,29 @@ export class GoplsClient {
      * - package-qualified calls (`errors.New`, `fmt.Println`, `user.GetByID`)
      *   take the blue italic static-method color (GoLand's DEFAULT_STATIC_METHOD).
      */
-    private annotateCallSites(data: Uint32Array): Uint32Array {
+    private annotateCallSites(data: Uint32Array, model: Monaco.editor.ITextModel): Uint32Array {
       const legendTypes = this.semanticLegend?.tokenTypes
       if (!legendTypes?.length) return data
       const namespaceIdx = legendTypes.indexOf('namespace')
       const functionIdx = legendTypes.indexOf('function')
+      const parameterIdx = legendTypes.indexOf('parameter')
+      const variableIdx = legendTypes.indexOf('variable')
       const defModIdx = this.semanticLegend?.tokenModifiers
         ? this.semanticLegend.tokenModifiers.indexOf('definition')
         : -1
-      if (functionIdx < 0 || namespaceIdx < 0) return data
       const qualifiedIdx = legendTypes.length // 'qualifiedCall' appended by getLegend
+      const receiverIdx = qualifiedIdx + 1
+      const lines = model.getLinesContent()
+      const receiverByLine: Array<string | undefined> = Array(lines.length)
+      for (const declaration of goSourceDeclarations(model.getValue())) {
+        if (!declaration.receiver) continue
+        const start = declaration.startLine - 1
+        const receiver = /^[ \t]*func[ \t]*\([ \t]*([A-Za-z_]\w*)[ \t]+/.exec(lines[start])?.[1]
+        if (!receiver) continue
+        for (let index = start; index < declaration.endLine && index < lines.length; index += 1) {
+          receiverByLine[index] = receiver
+        }
+      }
       const out = new Uint32Array(data)
       let line = 0
       let char = 0
@@ -953,8 +1053,13 @@ export class GoplsClient {
         const len = out[i + 2]
         const isDeclaration = defModIdx >= 0 && (modBits & (1 << defModIdx)) !== 0
         const qualified = prevType === namespaceIdx && prevLine === line && char === prevEnd + 1
-        if (typeIdx === functionIdx && !isDeclaration && qualified) {
+        if (typeIdx === functionIdx && !isDeclaration && qualified && namespaceIdx >= 0) {
           out[i + 3] = qualifiedIdx
+        } else if ((typeIdx === parameterIdx || typeIdx === variableIdx) &&
+          receiverByLine[line] && lines[line]?.slice(char, char + len) === receiverByLine[line]) {
+          // gopls labels method receivers as parameters or variables depending
+          // on version. Color the receiver at its declaration and use sites.
+          out[i + 3] = receiverIdx
         }
         prevType = typeIdx
         prevLine = line
@@ -963,21 +1068,42 @@ export class GoplsClient {
       return out
     }
 
-  /** Normalize `changes` and `documentChanges` into one uri→edits map. */
-  private workspaceEditChanges(edit: LspWorkspaceEdit): Record<string, LspTextEdit[]> {
-    const changes: Record<string, LspTextEdit[]> = {}
-    for (const [uri, edits] of Object.entries(edit.changes ?? {})) {
-      if (Array.isArray(edits)) changes[uri] = changes[uri] ? [...changes[uri], ...edits] : [...edits]
-    }
-    for (const change of edit.documentChanges ?? []) {
-      const uri = change.textDocument?.uri
-      const edits = change.edits
-      if (!uri || !Array.isArray(edits)) continue
-      const current = changes[uri] ?? []
-      // Edits in one documentChanges entry share the same document version.
-      changes[uri] = [...current, ...edits]
-    }
-    return changes
+  /** Run a selected cross-file lightbulb edit through the checked transaction. */
+  private ensureWorkspaceEditCommand(): string {
+    if (this.workspaceEditCommandId) return this.workspaceEditCommandId
+    const id = `mgland.gopls.workspaceEdit.${this.nextId}`
+    this.workspaceEditCommandId = id
+    this.disposables.push(this.monaco.editor.registerCommand(id, (
+      _accessor,
+      changes: Record<string, LspTextEdit[]>,
+      sourceUri: string,
+      sourceVersion: number,
+      documentVersions: Map<string, number>,
+      serverCommand?: LspCodeAction['command'],
+    ) => {
+      const validate = () => {
+        const source = this.monaco.editor.getModel(this.monaco.Uri.parse(sourceUri))
+        if (!source || source.isDisposed() || source.getVersionId() !== sourceVersion) {
+          throw new Error('Source file changed while the code action was open; retry the action')
+        }
+        for (const uri of Object.keys(changes)) {
+          if (documentVersions.get(uri) !== this.documents.get(uri)?.version) {
+            throw new Error('A file changed while the code action was open; retry the action')
+          }
+        }
+      }
+      validate()
+      if (!this.onWorkspaceEdit) throw new Error('Workspace edits are not ready')
+      return this.onWorkspaceEdit(changes, { validate }).then(async () => {
+        if (serverCommand) {
+          await this.request('workspace/executeCommand', {
+            command: serverCommand.command,
+            arguments: serverCommand.arguments ?? [],
+          })
+        }
+      })
+    }))
+    return id
   }
 
   /**
@@ -1036,14 +1162,15 @@ export class GoplsClient {
 
   /** Update gopls settings and push them to a running server. */
   setConfig(settings: { staticcheck?: boolean; gofumpt?: boolean; localPrefix?: string }): void {
-    // gopls expects localPrefix as a string array; the preference holds a
-    // comma/space separated string like GoLand's grouping input.
+    // gopls uses the `local` setting (the goimports -local flag), whose value
+    // is a comma-separated list of import path prefixes.
     const prefixes = (settings.localPrefix ?? '').split(/[,\s]+/).filter(Boolean)
     this.goplsSettings = {
       staticcheck: settings.staticcheck,
       gofumpt: settings.gofumpt,
-      ...(prefixes.length ? { localPrefix: prefixes } : {}),
+      local: prefixes.join(','),
     }
+    this.settingsRevision += 1
     if (this.ready) {
       void this.notify('workspace/didChangeConfiguration', { settings: { gopls: this.goplsSettingsPayload() } }).catch(() => undefined)
     }
@@ -1063,7 +1190,7 @@ export class GoplsClient {
       semanticTokens: true,
       staticcheck: this.goplsSettings.staticcheck ?? true,
       gofumpt: this.goplsSettings.gofumpt ?? false,
-      ...(this.goplsSettings.localPrefix ? { localPrefix: this.goplsSettings.localPrefix } : {}),
+      local: this.goplsSettings.local ?? '',
     }
   }
 
@@ -1090,9 +1217,11 @@ export class GoplsClient {
     await this.start()
     const uri = fileUri(path)
     const model = this.monaco.editor.getModel(this.monaco.Uri.parse(uri))
+    const sourceVersion = model?.getVersionId() ?? null
     if (model) await this.syncModel(model)
     else if (this.documents.has(uri)) await this.changeDocument(path, this.documents.get(uri)!.text)
-    if (this.stopped) return []
+    if (this.stopped || (model && (model.isDisposed() || model.getVersionId() !== sourceVersion))) return []
+    const documentVersions = new Map([...this.documents].map(([key, document]) => [key, document.version]))
     const diagnostics = (this.diagnostics.get(uri) ?? []).filter((diagnostic) =>
       diagnostic.range.start.line <= line - 1 && diagnostic.range.end.line >= line - 1)
     const actions = await this.request<LspCodeAction[] | null>('textDocument/codeAction', {
@@ -1103,9 +1232,11 @@ export class GoplsClient {
       },
       context: { diagnostics, ...(only?.length ? { only } : {}) },
     })
-    if (this.stopped) return []
+    if (this.stopped || (model && (model.isDisposed() || model.getVersionId() !== sourceVersion))) return []
     // gopls marks unusable actions with `disabled: { reason }`; skip those.
-    return (actions ?? []).filter((action) => !(action as { disabled?: unknown }).disabled)
+    const usable = (actions ?? []).filter((action) => !(action as { disabled?: unknown }).disabled)
+    for (const action of usable) this.codeActionSnapshots.set(action, { sourceUri: uri, sourceVersion, documentVersions })
+    return usable
   }
 
   /**
@@ -1143,14 +1274,42 @@ export class GoplsClient {
     // gopls serves extract refactors lazily: the codeAction carries only `data`
     // (resolveSupport is declared in initialize) and the edit arrives from
     // codeAction/resolve.
+    const snapshot = this.codeActionSnapshots.get(input)
+    const validateSource = () => {
+      if (!snapshot || snapshot.sourceVersion === null) return
+      const source = this.monaco.editor.getModel(this.monaco.Uri.parse(snapshot.sourceUri))
+      if (!source || source.isDisposed() || source.getVersionId() !== snapshot.sourceVersion) {
+        throw new Error('Source file changed while the code action was open; retry the action')
+      }
+    }
+    validateSource()
     let action = input
     if (!action.edit && !action.command && action.data) {
       action = await this.request<LspCodeAction>('codeAction/resolve', action, 10000)
     }
+    validateSource()
     if (action.edit) {
-      const changes = this.workspaceEditChanges(action.edit)
-      if (this.onWorkspaceEdit && Object.keys(changes).length) await this.onWorkspaceEdit(changes)
-      return
+      const changes = workspaceEditChanges(action.edit)
+      const validate = () => {
+        validateSource()
+        for (const uri of Object.keys(changes)) {
+          if (snapshot && snapshot.documentVersions.get(uri) !== this.documents.get(uri)?.version) {
+            throw new Error('A file changed while the code action was open; retry the action')
+          }
+        }
+        for (const change of action.edit?.documentChanges ?? []) {
+          const uri = change.textDocument?.uri
+          const version = change.textDocument?.version
+          if (uri && version != null && version !== this.documents.get(uri)?.version) {
+            throw new Error('A file changed while the code action was open; retry the action')
+          }
+        }
+      }
+      validate()
+      if (Object.keys(changes).length) {
+        if (!this.onWorkspaceEdit) throw new Error('Workspace edits are not ready')
+        await this.onWorkspaceEdit(changes, { validate })
+      }
     }
     if (action.command) {
       await this.request('workspace/executeCommand', {
@@ -1436,19 +1595,35 @@ export class GoplsClient {
         break
       case 'workspace/applyEdit': {
         const params = message.params as { edit?: LspWorkspaceEdit } | undefined
-        const changes = params?.edit ? this.workspaceEditChanges(params.edit) : {}
-        if (this.onWorkspaceEdit && Object.keys(changes).length) {
-          try {
-            await this.onWorkspaceEdit(changes)
-            result = { applied: true }
-          } catch (error) {
-            result = {
-              applied: false,
-              failureReason: error instanceof Error ? error.message : String(error),
+        try {
+          const changes = params?.edit ? workspaceEditChanges(params.edit) : {}
+          if (this.onWorkspaceEdit && Object.keys(changes).length) {
+            const documentVersions = new Map([...this.documents].map(([uri, document]) => [uri, document.version]))
+            const validate = () => {
+              for (const uri of Object.keys(changes)) {
+                if (documentVersions.get(uri) !== this.documents.get(uri)?.version) {
+                  throw new Error('A file changed while the workspace edit was running')
+                }
+              }
+              for (const change of params?.edit?.documentChanges ?? []) {
+                const uri = change.textDocument?.uri
+                const version = change.textDocument?.version
+                if (uri && version != null && version !== this.documents.get(uri)?.version) {
+                  throw new Error('A file changed while the workspace edit was running')
+                }
+              }
             }
+            validate()
+            await this.onWorkspaceEdit(changes, { validate })
+            result = { applied: true }
+          } else {
+            result = { applied: false, failureReason: 'No workspace edit handler' }
           }
-        } else {
-          result = { applied: false, failureReason: 'No workspace edit handler' }
+        } catch (error) {
+          result = {
+            applied: false,
+            failureReason: error instanceof Error ? error.message : String(error),
+          }
         }
         break
       }

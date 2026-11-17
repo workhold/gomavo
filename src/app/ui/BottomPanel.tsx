@@ -1,4 +1,4 @@
-import { useMemo, useState, type ReactNode } from 'react'
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type PointerEvent, type ReactNode } from 'react'
 import type { RefObject } from 'react'
 import {
   AlertCircle, Bug, Check, ChevronDown, FlaskConical, GitBranch, History,
@@ -25,7 +25,7 @@ import { UsagesPane, type UsageItem } from './UsagesPane'
 import type { DapThread } from '../../lib/debug/dapClient'
 import type { DebugConsoleLine, DebuggerFrame, DebuggerState, DebuggerVariable, WatchEntry } from '../hooks/useDebugger'
 import type {
-  FileHistorySource, GitFileHistoryView, OutputLine, PanelView, TaskOptions, TestResult,
+  FileHistorySource, GitFileHistoryView, OpenFile, OutputLine, PanelView, TaskOptions, TestResult,
 } from '../types'
 import type { Locale, MessageKey } from '../../lib/i18n'
 
@@ -68,6 +68,7 @@ export interface BottomPanelProps {
   selectedHistoryEntry: GitFileHistoryEntry | null
   openGitFileCommitDiff: (entry: GitFileHistoryEntry) => Promise<void>
   projectFiles: FileEntry[]
+  openDocuments: OpenFile[]
   searchRevision: number
   onReplaced: (results: ReplaceFileResult[]) => Promise<void>
   debugState: DebuggerState
@@ -102,6 +103,19 @@ export interface BottomPanelProps {
   refreshGit: (workspace: string, options?: { refreshIgnored?: boolean }) => Promise<void>
   notify: (text: string, kind?: 'success' | 'error') => void
   formatError: (cause: unknown) => string
+}
+
+const MIN_PANEL_HEIGHT = 160
+const DEFAULT_PANEL_HEIGHT = 246
+const PANEL_HEIGHT_STORAGE_KEY = 'mgland.bottomPanel.height'
+
+function savedPanelHeight(): number {
+  try {
+    const value = Number(localStorage.getItem(PANEL_HEIGHT_STORAGE_KEY))
+    return Number.isFinite(value) && value >= MIN_PANEL_HEIGHT ? value : DEFAULT_PANEL_HEIGHT
+  } catch {
+    return DEFAULT_PANEL_HEIGHT
+  }
 }
 
 /** One console line with ANSI colors and clickable file:line references. */
@@ -204,7 +218,7 @@ export function BottomPanel(props: BottomPanelProps) {
     testOutputByCase, coverageProfile, packageDirectory, runSelection, jumpToTest, rerunTest, diagnostics,
     navigateTo, gitDiff, openFile, gitFileHistory, fileHistorySource, setFileHistorySource,
     localHistoryEntries, selectedLocalHistoryEntry, setSelectedLocalHistoryId, selectedLocalDiff,
-    selectedHistoryEntry, openGitFileCommitDiff, projectFiles, searchRevision, onReplaced,
+    selectedHistoryEntry, openGitFileCommitDiff, projectFiles, openDocuments, searchRevision, onReplaced,
     debugState, debugFrames, debugSelectedFrameIndex, debugSelectFrame, debugVariables,
     debugExpandVariable, debugConsole, debugControl, debugCurrentThreadId, dlvInstalled, installDlv, startDebug,
     debugThreads, debugSelectThread, debugWatches, debugAddWatch, debugRemoveWatch, debugEvaluateRepl,
@@ -213,6 +227,63 @@ export function BottomPanel(props: BottomPanelProps) {
     mergeResolved, refreshGit, notify, formatError,
   } = props
   const [selectedCase, setSelectedCase] = useState<{ packageName: string; fullName: string } | null>(null)
+  const panelRef = useRef<HTMLElement | null>(null)
+  const dragRef = useRef<{ pointerId: number; y: number; height: number } | null>(null)
+  const latestHeightRef = useRef<number | null>(null)
+  const [panelHeight, setPanelHeight] = useState(savedPanelHeight)
+  const [maxPanelHeight, setMaxPanelHeight] = useState(1200)
+
+  useEffect(() => {
+    const parent = panelRef.current?.parentElement
+    if (!parent) return
+    const updateMaximum = () => {
+      // Reserve the tab bar and a useful editing area while resizing.
+      const maximum = Math.max(MIN_PANEL_HEIGHT, parent.clientHeight - 226)
+      setMaxPanelHeight(maximum)
+      setPanelHeight((height) => Math.min(height, maximum))
+    }
+    updateMaximum()
+    const observer = new ResizeObserver(updateMaximum)
+    observer.observe(parent)
+    return () => observer.disconnect()
+  }, [])
+
+  const savePanelHeight = (height: number) => {
+    try { localStorage.setItem(PANEL_HEIGHT_STORAGE_KEY, String(height)) } catch { /* Storage is optional. */ }
+  }
+  const startResize = (event: PointerEvent<HTMLDivElement>) => {
+    if (event.button !== 0) return
+    event.preventDefault()
+    event.currentTarget.setPointerCapture(event.pointerId)
+    dragRef.current = { pointerId: event.pointerId, y: event.clientY, height: panelRef.current?.getBoundingClientRect().height ?? panelHeight }
+    latestHeightRef.current = null
+  }
+  const moveResize = (event: PointerEvent<HTMLDivElement>) => {
+    const drag = dragRef.current
+    if (!drag || drag.pointerId !== event.pointerId) return
+    const height = Math.max(MIN_PANEL_HEIGHT, Math.min(maxPanelHeight, drag.height + drag.y - event.clientY))
+    latestHeightRef.current = height
+    setPanelHeight(height)
+  }
+  const finishResize = (event: PointerEvent<HTMLDivElement>) => {
+    if (dragRef.current?.pointerId !== event.pointerId) return
+    dragRef.current = null
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId)
+    savePanelHeight(latestHeightRef.current ?? panelRef.current?.getBoundingClientRect().height ?? panelHeight)
+    latestHeightRef.current = null
+  }
+  const resizeWithKeyboard = (event: KeyboardEvent<HTMLDivElement>) => {
+    let next: number
+    if (event.key === 'ArrowUp') next = panelHeight + (event.shiftKey ? 50 : 10)
+    else if (event.key === 'ArrowDown') next = panelHeight - (event.shiftKey ? 50 : 10)
+    else if (event.key === 'Home') next = MIN_PANEL_HEIGHT
+    else if (event.key === 'End') next = maxPanelHeight
+    else return
+    event.preventDefault()
+    const height = Math.max(MIN_PANEL_HEIGHT, Math.min(maxPanelHeight, next))
+    setPanelHeight(height)
+    savePanelHeight(height)
+  }
   const coverageFiles = useMemo(() => {
     if (!coverageProfile || !root) return []
     const paths = projectFiles.map((entry) => entry.path)
@@ -235,7 +306,23 @@ export function BottomPanel(props: BottomPanelProps) {
     onClick={() => { setPanelView(view); setPanelOpen(true) }}
   >{icon}{label}{extra}</button>
 
-  return <section className={`bottom-panel ${panelOpen ? '' : 'collapsed'}`} aria-label={t('底部工具窗口')}>
+  return <section ref={panelRef} className={`bottom-panel ${panelOpen ? '' : 'collapsed'}`} aria-label={t('底部工具窗口')} style={panelOpen ? { height: Math.min(panelHeight, maxPanelHeight) } : undefined}>
+    {panelOpen && <div
+      className="panel-resize-handle"
+      role="separator"
+      tabIndex={0}
+      aria-label={locale === 'zh-CN' ? '调整底部工具窗口高度' : 'Resize bottom tool window'}
+      aria-orientation="horizontal"
+      aria-valuemin={MIN_PANEL_HEIGHT}
+      aria-valuemax={maxPanelHeight}
+      aria-valuenow={Math.min(panelHeight, maxPanelHeight)}
+      title={locale === 'zh-CN' ? '上下拖动调整高度；方向键微调' : 'Drag vertically to resize; use arrow keys to adjust'}
+      onPointerDown={startResize}
+      onPointerMove={moveResize}
+      onPointerUp={finishResize}
+      onPointerCancel={finishResize}
+      onKeyDown={resizeWithKeyboard}
+    />}
     <div className="panel-tabs">
       {tab('output', t('Run'), <Play size={14} />, runningTask ? <span className="running-indicator" /> : null)}
       {tab('tests', t('Test Results'), <FlaskConical size={14} />, testResults.length > 0 ? <span className="panel-count">{testPassed + testFailed}</span> : null)}
@@ -266,7 +353,7 @@ export function BottomPanel(props: BottomPanelProps) {
         <UsagesPane t={t} locale={locale} identifier={usages?.identifier ?? null} usages={usages?.items ?? []} busy={usagesBusy} navigateTo={navigateTo} />
       </div>
       <div className={`panel-page ${panelView === 'todo' ? 'visible' : ''}`}>
-        <TodoPane t={t} locale={locale} root={root} revision={searchRevision} active={panelView === 'todo' && panelOpen} navigateTo={navigateTo} />
+        <TodoPane t={t} locale={locale} root={root} revision={searchRevision} active={panelView === 'todo' && panelOpen} openDocuments={openDocuments} navigateTo={navigateTo} />
       </div>
       <div className={`panel-page debug-page ${panelView === 'debug' ? 'visible' : ''}`}>
         <DebugPane

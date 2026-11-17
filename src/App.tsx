@@ -13,7 +13,8 @@ import {
   command, desktopAvailable, displayName, errorMessage, fileLanguage,
   joinPath, relativePath, type BinaryPreview, type FileEntry, type GoModInfo, type ReplaceFileResult, type ToolVersions,
 } from './lib/api'
-import { fileUri, uriToPath, applyTextEdits, type WorkspaceSymbolEntry, type LspTextEdit, type StructureSymbol } from './lib/lsp'
+import { fileUri, uriToPath, applyTextEdits, type WorkspaceEditCallback, type WorkspaceSymbolEntry, type StructureSymbol } from './lib/lsp'
+import { commitWorkspaceFileWrites, type WorkspaceFileWrite } from './lib/lsp/workspaceEditTransaction'
 import type { LspCodeAction } from './lib/lsp/protocol'
 import { createGoTest, goPackageDeclarationLine, goSourceDeclarations, goTestDeclarations } from './lib/goTests'
 import { generateConstructor, generateGetters, generateSetters, generateStructTags, goStructs, type StructTagScheme } from './lib/goGenerate'
@@ -21,6 +22,7 @@ import { registerGoTemplates } from './lib/goTemplates'
 import { coverageRanges } from './lib/coverage'
 import { rememberProject, loadRecentProjects } from './lib/recentProjects'
 import { createShortcutMatcher, DEFAULT_SHORTCUTS, loadPreferences, loadProjectGoOverrides, savePreferences, saveProjectGoOverrides, shortcutFromKeyboardEvent, type GoPreferences, type Preferences, type RunConfiguration, type ShortcutAction } from './lib/preferences'
+import { createProjectCodeStyleIfMissing, loadProjectCodeStyleSnapshot, parseProjectCodeStyle, projectCodeStyleExists, projectCodeStylePath, saveProjectCodeStyle, serializeProjectCodeStyle, type ProjectCodeStyleIO } from './lib/projectCodeStyle'
 import { createLocalUnifiedDiff, LocalEditHistory } from './lib/localHistory'
 import { executePluginAction, getEnabledPluginActions, getPlugins, subscribePlugins } from './lib/plugins/plugins'
 import { NativePluginHost } from './lib/plugins/nativePluginHost'
@@ -30,6 +32,8 @@ import { localizeError } from './lib/errorI18n'
 import { applyEditorConfigToContent, editorConfigIndentOptions, parseGoLandCodeStyle, resolveEditorConfig, type EditorConfigSettings } from './lib/editorConfig'
 import { defineMglandTheme, monacoThemeName } from './lib/monacoTheme'
 import { registerGoSuffixCompletions } from './lib/goSuffix'
+import { installGoTodoDecorations } from './lib/goHighlight'
+import { installModifierNavigation } from './lib/modifierNavigation'
 import { entryIcon, formatBinaryPreview, isWorkspaceFile, readOptionalEditorConfig } from './app/helpers'
 import type {
   ContextState, DialogState, OpenFile, PaletteMode, PanelView,
@@ -120,6 +124,14 @@ function useDebouncedValue<T>(value: T, delay: number, key?: unknown): T {
     return () => window.clearTimeout(timer)
   }, [value, delay, key])
   return deferred
+}
+
+const projectCodeStyleIO: ProjectCodeStyleIO = {
+  listDirectory: (path) => command<FileEntry[]>('list_directory', { path }),
+  readFile: (path) => command<string>('read_file', { path }),
+  createDirectory: (path) => command('create_directory', { path }),
+  createFile: (path, content) => command('create_file_with_content', { path, content }),
+  writeFile: (path, content, expectedContent) => command('write_file', { path, content, expectedContent }),
 }
 
 function App() {
@@ -243,6 +255,13 @@ function App() {
   /** Style-family scope: "global" applies everywhere, "project" only to the open workspace. */
   const [goScope, setGoScope] = useState<'global' | 'project'>('global')
   const [projectGoOverrides, setProjectGoOverrides] = useState<Partial<GoPreferences>>({})
+  const [projectStyleReady, setProjectStyleReady] = useState(false)
+  const projectStyleDiskRef = useRef(new Map<string, string | null>())
+  const projectStyleExternalRevisionRef = useRef(new Map<string, number>())
+  const projectStyleSaveRef = useRef<Promise<void>>(Promise.resolve())
+  const projectStyleLoadRef = useRef<{ root: string; promise: Promise<void> } | null>(null)
+  const projectStyleLoadRequestRef = useRef(0)
+  const syncProjectStyleTabRef = useRef<((path: string, content: string) => void) | null>(null)
   const [searchRevision, setSearchRevision] = useState(0)
   const [runConfigEditorOpen, setRunConfigEditorOpen] = useState(false)
   const [symbolResults, setSymbolResults] = useState<WorkspaceSymbolEntry[]>([])
@@ -324,7 +343,7 @@ function App() {
     historyAvailability, historyNavigationBusy, cancelPendingNavigation, refreshHistoryAvailability,
     captureEditorLocation, applyNavigation, navigateTo, navigateHistory, reset: resetNavigation,
   } = useNavigation({ openFileRef, editorRef, activePathRef, activePath })
-  const lspWorkspaceEditsRef = useRef<((changes: Record<string, LspTextEdit[]>) => Promise<void>) | null>(null)
+  const lspWorkspaceEditsRef = useRef<WorkspaceEditCallback | null>(null)
   const goGetRef = useRef<((module: string) => void) | null>(null)
   // Style-family Go settings support a project scope: project overrides win
   // over the global defaults while the workspace is open.
@@ -348,12 +367,122 @@ function App() {
     })
   }, [effectiveGo.localPrefix, effectiveGo.staticcheck, effectiveGo.gofumpt])
 
-  // Load the project-scoped overrides (and default the scope selector) per workspace.
+  // Project style now lives in .mgland/code-style.json. Migrate the older
+  // browser-local overrides when a workspace has no style file yet.
   useEffect(() => {
-    const overrides = loadProjectGoOverrides(root)
+    const request = ++projectStyleLoadRequestRef.current
+    setProjectGoOverrides({})
+    setGoScope('global')
+    setProjectStyleReady(false)
+    if (!root || !desktopAvailable) {
+      projectStyleLoadRef.current = null
+      return
+    }
+    const load = (async () => {
+      let snapshot = await loadProjectCodeStyleSnapshot(root, projectCodeStyleIO)
+      if (snapshot === null) {
+        const legacy = loadProjectGoOverrides(root)
+        if (Object.keys(legacy).length) {
+          const created = await createProjectCodeStyleIfMissing(root, legacy, projectCodeStyleIO)
+          snapshot = created
+            ? { go: legacy, content: serializeProjectCodeStyle(legacy) }
+            : await loadProjectCodeStyleSnapshot(root, projectCodeStyleIO)
+          if (snapshot === null) throw new Error('Project code-style file disappeared during migration')
+          saveProjectGoOverrides(root, {})
+        }
+      } else saveProjectGoOverrides(root, {})
+      if (request !== projectStyleLoadRequestRef.current || rootRef.current !== root) return
+      const overrides = snapshot?.go ?? {}
+      projectStyleDiskRef.current.set(root, snapshot?.content ?? null)
+      setProjectGoOverrides(overrides)
+      setGoScope(Object.keys(overrides).length ? 'project' : 'global')
+      setProjectStyleReady(true)
+    })()
+    projectStyleLoadRef.current = { root, promise: load }
+    void load.catch((cause) => {
+      if (request === projectStyleLoadRequestRef.current && rootRef.current === root) notify(formatError(cause), 'error')
+    })
+  }, [root, formatError, notify])
+
+  const persistProjectGoOverrides = useCallback((workspace: string, overrides: Partial<GoPreferences>) => {
+    const request = ++projectStyleLoadRequestRef.current
+    const externalRevision = projectStyleExternalRevisionRef.current.get(workspace) ?? 0
     setProjectGoOverrides(overrides)
-    setGoScope(Object.keys(overrides).length ? 'project' : 'global')
-  }, [root])
+    projectStyleSaveRef.current = projectStyleSaveRef.current.catch(() => undefined).then(async () => {
+      const load = projectStyleLoadRef.current
+      if (load?.root === workspace) await load.promise
+      if ((projectStyleExternalRevisionRef.current.get(workspace) ?? 0) !== externalRevision
+        || !projectStyleDiskRef.current.has(workspace)) {
+        throw new Error('Save conflict: File changed on disk. Reload before saving')
+      }
+      const expected = projectStyleDiskRef.current.get(workspace)
+      let content: string
+      if (expected === null) {
+        if (!await createProjectCodeStyleIfMissing(workspace, overrides, projectCodeStyleIO)) {
+          throw new Error('Save conflict: File changed on disk. Reload before saving')
+        }
+        content = serializeProjectCodeStyle(overrides)
+      } else {
+        content = await saveProjectCodeStyle(workspace, overrides, projectCodeStyleIO, expected!)
+      }
+      if ((projectStyleExternalRevisionRef.current.get(workspace) ?? 0) !== externalRevision) return
+      projectStyleDiskRef.current.set(workspace, content)
+      saveProjectGoOverrides(workspace, {})
+      if (rootRef.current === workspace) {
+        syncProjectStyleTabRef.current?.(projectCodeStylePath(workspace), content)
+        if (!treeRef.current[workspace]?.some((entry) => entry.name === '.mgland')) {
+          const entries = await command<FileEntry[]>('list_directory', { path: workspace })
+          setTree((current) => ({ ...current, [workspace]: entries }))
+        }
+      }
+    }).catch(async (cause) => {
+      if (rootRef.current !== workspace) return
+      notify(formatError(cause), 'error')
+      if (request !== projectStyleLoadRequestRef.current) return
+      try {
+        const snapshot = await loadProjectCodeStyleSnapshot(workspace, projectCodeStyleIO)
+        if (request !== projectStyleLoadRequestRef.current || rootRef.current !== workspace) return
+        const latest = snapshot?.go ?? {}
+        const content = snapshot?.content ?? null
+        if (projectStyleDiskRef.current.has(workspace) && projectStyleDiskRef.current.get(workspace) !== content) {
+          projectStyleExternalRevisionRef.current.set(workspace, (projectStyleExternalRevisionRef.current.get(workspace) ?? 0) + 1)
+        }
+        projectStyleDiskRef.current.set(workspace, content)
+        setProjectGoOverrides(latest)
+        setGoScope(Object.keys(latest).length ? 'project' : 'global')
+        setProjectStyleReady(true)
+      } catch (reloadError) {
+        if (request === projectStyleLoadRequestRef.current && rootRef.current === workspace) {
+          setProjectStyleReady(false)
+          notify(formatError(reloadError), 'error')
+        }
+      }
+    })
+  }, [formatError, notify])
+
+  const reloadProjectCodeStyle = useCallback(async (workspace: string) => {
+    if (rootRef.current !== workspace) return
+    const request = ++projectStyleLoadRequestRef.current
+    try {
+      await projectStyleSaveRef.current.catch(() => undefined)
+      const snapshot = await loadProjectCodeStyleSnapshot(workspace, projectCodeStyleIO)
+      if (request !== projectStyleLoadRequestRef.current || rootRef.current !== workspace) return
+      const content = snapshot?.content ?? null
+      if (projectStyleDiskRef.current.has(workspace) && projectStyleDiskRef.current.get(workspace) !== content) {
+        projectStyleExternalRevisionRef.current.set(workspace, (projectStyleExternalRevisionRef.current.get(workspace) ?? 0) + 1)
+      }
+      projectStyleDiskRef.current.set(workspace, content)
+      const overrides = snapshot?.go ?? {}
+      setProjectGoOverrides(overrides)
+      setGoScope(Object.keys(overrides).length ? 'project' : 'global')
+      setProjectStyleReady(true)
+    } catch (cause) {
+      if (request === projectStyleLoadRequestRef.current && rootRef.current === workspace) {
+        setProjectStyleReady(false)
+        notify(formatError(cause), 'error')
+      }
+    }
+  }, [formatError, notify])
 
   /**
    * Replace a tab's content from outside the keyboard (disk reload, workspace
@@ -374,55 +503,126 @@ function App() {
     setExternalContent((current) => current[path] === next ? current : { ...current, [path]: next })
   }, [monacoApi])
 
-  /** Apply gopls workspace edits: open tabs update in place, closed files rewrite on disk. */
-  const applyWorkspaceEdits = useCallback(async (changes: Record<string, LspTextEdit[]>) => {
-    const workspace = rootRef.current
-    for (const [uri, edits] of Object.entries(changes)) {
-      if (!edits.length) continue
-      const path = uriToPath(uri)
-      if (workspace && !isWorkspaceFile(workspace, path)) continue
-      const open = tabsRef.current.find((file) => file.path === path)
-      if (open && !open.readOnly && !open.binary) {
-        const next = applyTextEdits(open.content, edits)
-        if (next === open.content) continue
-        const clean = open.content === open.savedContent
-        applyExternalContent(path, next)
-        if (clean) {
-          await command('write_file', { path, content: next, expectedContent: open.savedContent })
-          const updated = tabsRef.current.map((file) => file.path === path ? { ...file, content: next, savedContent: next } : file)
-          tabsRef.current = updated
-          setTabs(updated)
-          if (localEditHistoryRef.current.ensureFile(path, next)) setLocalHistoryRevision((value) => value + 1)
-        } else {
-          const updated = tabsRef.current.map((file) => file.path === path ? { ...file, content: next } : file)
-          tabsRef.current = updated
-          setTabs(updated)
-          if (localEditHistoryRef.current.ensureFile(path, next)) setLocalHistoryRevision((value) => value + 1)
+  syncProjectStyleTabRef.current = (path, content) => {
+    const file = tabsRef.current.find((item) => item.path === path)
+    if (!file || file.content !== file.savedContent) return
+    if (file.content !== content) applyExternalContent(path, content)
+    const next = tabsRef.current.map((item) => item.path === path ? { ...item, content, savedContent: content } : item)
+    tabsRef.current = next
+    setTabs(next)
+  }
+
+  /** Apply gopls workspace edits after validating every target, with checked disk rollback. */
+  const workspaceEditApplyQueueRef = useRef<Promise<void>>(Promise.resolve())
+  const applyWorkspaceEdits: WorkspaceEditCallback = useCallback((changes, options) => {
+    const run = workspaceEditApplyQueueRef.current.then(async () => {
+      const workspace = rootRef.current
+      if (!workspace) throw new Error('The workspace closed while the edit was running')
+
+      type PlannedEdit = {
+        path: string
+        before: string
+        next: string
+        open: OpenFile | null
+        model: Monaco.editor.ITextModel | null
+        modelVersion: number | null
+        diskBefore: string | null | undefined
+      }
+      const planned: PlannedEdit[] = []
+      const paths = new Set<string>()
+      for (const [uri, edits] of Object.entries(changes)) {
+        if (!edits.length) continue
+        options?.validate?.()
+        const path = uriToPath(uri)
+        if (!isWorkspaceFile(workspace, path)) throw new Error(`${path}: outside the workspace`)
+        if (paths.has(path)) throw new Error(`${path}: duplicate workspace edit target`)
+        paths.add(path)
+        const open = tabsRef.current.find((file) => file.path === path) ?? null
+        if (open?.readOnly || open?.binary) throw new Error(`${path}: file is read-only`)
+        const model = open ? monacoApi?.editor.getModel(monacoApi.Uri.parse(fileUri(path))) ?? null : null
+        if (model && (model.isDisposed() || model.getValue() !== open?.content)) {
+          throw new Error(`${path}: editor content changed; retry the edit`)
         }
-        if (path.endsWith('.go')) void lspRef.current?.changeDocument(path, next).catch(() => undefined)
-        continue
+        const before = open?.content ?? await command<string>('read_file', { path }).catch((cause) => {
+          if (options?.requireExisting) throw new Error(`${path}: ${formatError(cause)}`)
+          return null
+        })
+        let next: string
+        try { next = applyTextEdits(before ?? '', edits) }
+        catch (cause) { throw new Error(`${path}: ${formatError(cause)}`) }
+        if (next === before) continue
+        let diskBefore: string | null | undefined
+        if (!open) {
+          diskBefore = before
+        } else if (open.content === open.savedContent) {
+          // Preflight clean tabs against disk before any file is changed.
+          const disk = await command<string>('read_file', { path }).catch((cause) => {
+            throw new Error(`${path}: ${formatError(cause)}`)
+          })
+          if (disk !== open.savedContent) throw new Error(`${path}: file changed on disk; reload before renaming`)
+          diskBefore = disk
+        }
+        planned.push({ path, before: before ?? '', next, open, model, modelVersion: model?.getVersionId() ?? null, diskBefore })
       }
-      if (open) continue
-      let disk: string
-      let existed = true
-      try {
-        disk = await command<string>('read_file', { path })
-      } catch {
-        // A code action may create a brand-new file (gopls source.addTest);
-        // its edits start from empty content.
-        disk = ''
-        existed = false
+
+      const validate = () => {
+        if (rootRef.current !== workspace) throw new Error('The workspace changed while the edit was running')
+        options?.validate?.()
+        for (const edit of planned) {
+          if (!edit.open) continue
+          const latest = tabsRef.current.find((file) => file.path === edit.path)
+          if (!latest || latest.content !== edit.open.content || latest.savedContent !== edit.open.savedContent) {
+            throw new Error(`${edit.path}: editor content changed; retry the edit`)
+          }
+          if (edit.model && (edit.model.isDisposed() || edit.model.getVersionId() !== edit.modelVersion)) {
+            throw new Error(`${edit.path}: editor content changed; retry the edit`)
+          }
+        }
       }
-      try {
-        const next = applyTextEdits(disk, edits)
-        if (next === disk) continue
-        await command('write_file', { path, content: next, expectedContent: existed ? disk : null })
-        if (path.endsWith('.go')) void lspRef.current?.openDocument(path, next).catch(() => undefined)
-      } catch (cause) {
-        notify(formatError(cause), 'error')
+      const writes: WorkspaceFileWrite[] = planned
+        .filter((edit) => edit.diskBefore !== undefined)
+        .map((edit) => ({ path: edit.path, before: edit.diskBefore!, after: edit.next }))
+      await commitWorkspaceFileWrites(writes, {
+        read: (path) => command<string>('read_file', { path }),
+        write: (path, content, expectedContent) => command<void>('write_file', { path, content, expectedContent }),
+        create: (path, content) => command<void>('create_file_with_content', { path, content }),
+        remove: (path) => command<void>('delete_path', { path }),
+      }, validate, () => {
+        const openEdits = planned.filter((edit) => edit.open)
+        if (!openEdits.length) return
+        const originalTabs = tabsRef.current
+        try {
+          for (const edit of openEdits) applyExternalContent(edit.path, edit.next)
+          const byPath = new Map(openEdits.map((edit) => [edit.path, edit]))
+          const updated = tabsRef.current.map((file) => {
+            const edit = byPath.get(file.path)
+            if (!edit) return file
+            return { ...file, content: edit.next, savedContent: edit.diskBefore === undefined ? file.savedContent : edit.next }
+          })
+          tabsRef.current = updated
+          setTabs(updated)
+        } catch (cause) {
+          for (const edit of openEdits) {
+            try { applyExternalContent(edit.path, edit.before) } catch { /* Preserve the original failure. */ }
+          }
+          tabsRef.current = originalTabs
+          setTabs(originalTabs)
+          throw cause
+        }
+      })
+      for (const edit of planned) {
+        if (edit.open && localEditHistoryRef.current.ensureFile(edit.path, edit.next)) {
+          setLocalHistoryRevision((value) => value + 1)
+        }
+        if (edit.path.endsWith('.go')) {
+          if (edit.open) void lspRef.current?.changeDocument(edit.path, edit.next).catch(() => undefined)
+          else void lspRef.current?.openDocument(edit.path, edit.next).catch(() => undefined)
+        }
       }
-    }
-  }, [applyExternalContent, formatError, localEditHistoryRef, lspRef, notify])
+    })
+    workspaceEditApplyQueueRef.current = run.catch(() => undefined)
+    return run
+  }, [applyExternalContent, formatError, monacoApi])
   lspWorkspaceEditsRef.current = applyWorkspaceEdits
 
   const refreshNativePlugins = useCallback(async () => {
@@ -613,7 +813,7 @@ function App() {
       pendingPaths = []
       if (!paths.length) return
       const workspace = rootRef.current
-      if (!workspace) return
+      if (workspace !== root) return
       // Refresh the tree for expanded directories containing a changed entry.
       const parents = new Set(paths.map((path) => {
         const slash = path.lastIndexOf('/')
@@ -626,13 +826,14 @@ function App() {
       // get`) reach gopls as watched-file updates so stale markers clear.
       const lspPaths = paths.filter((path) => /(^|\/)(go\.mod|go\.sum)$/.test(path) || path.endsWith('.go'))
       if (lspPaths.length) void lspRef.current?.changedWatchedFiles(lspPaths)
+      if (paths.includes(projectCodeStylePath(workspace))) void reloadProjectCodeStyle(workspace)
       void refreshProjectFiles(workspace)
       void refreshGit(workspace)
       void reloadCleanTabs()
     }
     void Promise.all([
       listen<{ root: string; paths: string[]; truncated: boolean }>('fs-changed', (event) => {
-        if (!event.payload.root.startsWith(root)) return
+        if (event.payload.root !== root) return
         pendingPaths = [...pendingPaths, ...event.payload.paths]
         window.clearTimeout(flushTimer)
         flushTimer = window.setTimeout(flush, 600)
@@ -649,7 +850,7 @@ function App() {
       void command('watch_stop').catch(() => undefined)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [root])
+  }, [root, reloadProjectCodeStyle])
 
   useEffect(() => {
     if (!root || !activePath || !preferences.project.autoRevealCurrentFile || !isWorkspaceFile(root, activePath)) return
@@ -692,7 +893,13 @@ function App() {
       const canonical = await command<string>('open_workspace', { root: path })
       workspaceGenerationRef.current += 1
       resetTasks()
+      const previousRoot = rootRef.current
       rootRef.current = canonical
+      if (previousRoot !== canonical) {
+        setProjectGoOverrides({})
+        setGoScope('global')
+        setProjectStyleReady(false)
+      }
       setRoot(canonical)
       setDialog(null)
       setDialogName('')
@@ -1047,6 +1254,9 @@ function App() {
         const file = tabsRef.current.find((item) => item.path === path)
         if (!file || file.readOnly || file.binary || generation !== workspaceGenerationRef.current) return false
         const savedContent = applyEditorConfigToContent(formatted ?? file.content, editorConfig)
+        const projectStyle = workspace && path === projectCodeStylePath(workspace)
+          ? parseProjectCodeStyle(savedContent)
+          : null
         if (savedContent === file.savedContent && file.content === file.savedContent) return true
         await command('write_file', { path, content: savedContent, expectedContent: file.savedContent })
         if (generation !== workspaceGenerationRef.current || workspace !== rootRef.current) return false
@@ -1076,6 +1286,14 @@ function App() {
           })().catch(() => undefined)
         }
         if (displayName(path) === '.editorconfig') void refreshOpenEditorConfigs()
+        if (workspace && projectStyle && rootRef.current === workspace) {
+          projectStyleLoadRequestRef.current += 1
+          projectStyleExternalRevisionRef.current.set(workspace, (projectStyleExternalRevisionRef.current.get(workspace) ?? 0) + 1)
+          projectStyleDiskRef.current.set(workspace, savedContent)
+          setProjectGoOverrides(projectStyle)
+          setGoScope('project')
+          setProjectStyleReady(true)
+        }
         if (workspace && rootRef.current === workspace) {
           const ignoreRulesChanged = displayName(path) === '.gitignore'
           void refreshGit(workspace, { refreshIgnored: ignoreRulesChanged })
@@ -1199,15 +1417,12 @@ function App() {
     setTabs(reordered)
   }, [])
 
-  const changeFile: OnChange = useCallback((value, event) => {
+  const changeFile = useCallback((source: 'main' | 'split', value: Parameters<OnChange>[0], event: Parameters<OnChange>[1]) => {
     if (value === undefined) return
-    // Monaco can emit a model change while React is switching tabs. Route the
-    // event by whichever mounted editor's model produced this content — the
-    // split pane has its own model that must reach tabs state and gopls too.
-    const model = [editorRef.current, splitEditorRef.current]
-      .map((editor) => editor?.getModel())
-      .find((candidate) => candidate && candidate.getValue() === value) ?? null
-    if (!model) return
+    // Each editor reports its own model. Matching by text can select the wrong
+    // file when the main and split panes happen to contain the same content.
+    const model = (source === 'main' ? editorRef.current : splitEditorRef.current)?.getModel()
+    if (!model || model.getValue() !== value) return
     const modelUri = model.uri.toString()
     const file = tabsRef.current.find((item) => fileUri(item.path) === modelUri)
     if (!file || file.readOnly || file.content === value) return
@@ -1220,7 +1435,7 @@ function App() {
       if (!client) return
       // Keystroke edits ride through as incremental changes; anything without
       // change metadata falls back to a full-text sync.
-      if (event?.changes?.length) void client.changeDocumentIncremental(file.path, event.changes).catch(() => undefined)
+      if (event?.changes?.length) void client.changeDocumentIncremental(file.path, event.changes, value).catch(() => undefined)
       else void client.changeDocument(file.path, value).catch(() => undefined)
     }
   }, [])
@@ -2071,9 +2286,33 @@ function App() {
     registerGoTemplates(monaco)
   }, [])
 
+  const installGoNavigation = useCallback((editor: Monaco.editor.IStandaloneCodeEditor, monaco: typeof Monaco) => {
+    const navigation = installModifierNavigation({
+      editor, monaco,
+      getClient: () => lspRef.current,
+      navigate: async (target, clicked) => {
+        const source = captureEditorLocation(editor)
+        await navigateTo(target, source ? { ...source, line: clicked.line, column: clicked.column } : clicked)
+      },
+      showReferences: (name, references) => {
+        setUsages({ identifier: name, items: references })
+        setUsagesBusy(false)
+        setPanelView('usages')
+        setPanelOpen(true)
+      },
+      reportError: (error) => notify(formatError(error), 'error'),
+      linkHint: (atDeclaration) => localeRef.current === 'zh-CN'
+        ? atDeclaration ? '⌘ 点击查看引用' : '⌘ 点击跳转定义'
+        : atDeclaration ? '⌘ click to find references' : '⌘ click to go to definition',
+    })
+    editor.onDidDispose(() => navigation.dispose())
+  }, [captureEditorLocation, formatError, navigateTo, notify])
+
   const onEditorMount: OnMount = useCallback((editor, monaco) => {
     editorRef.current = editor
     setMonacoApi(monaco)
+    installGoNavigation(editor, monaco)
+    installGoTodoDecorations(editor, monaco)
     const testFileContext = editor.createContextKey<boolean>('mglandGoTestFile', false)
     const sourceFileContext = editor.createContextKey<boolean>('mglandGoSourceFile', false)
     const sourceMethodContext = editor.createContextKey<boolean>('mglandGoSourceMethod', false)
@@ -2124,7 +2363,16 @@ function App() {
       scheduleGoContexts(event.position.lineNumber)
     })
     editor.onDidChangeModel(() => requestAnimationFrame(applyNavigation))
-    editor.onContextMenu((event) => scheduleGoContexts(event.target.position?.lineNumber ?? editor.getPosition()?.lineNumber))
+    const editorHost = editor.getContainerDomNode()
+    const prepareContextMenu = (event: MouseEvent) => {
+      // Monaco's own context-menu listener is registered before onMount runs.
+      // Capture the DOM event so its action preconditions reflect this line
+      // on the first right click, including keyboard-triggered menus.
+      const target = editor.getTargetAtClientPoint(event.clientX, event.clientY)
+      updateGoContexts(target?.position?.lineNumber ?? editor.getPosition()?.lineNumber)
+    }
+    editorHost.addEventListener('contextmenu', prepareContextMenu, true)
+    editor.onDidDispose(() => editorHost.removeEventListener('contextmenu', prepareContextMenu, true))
     // Breakpoint dots overlay the line-number position (GoLand style): slide
     // the glyph-lane dot right by the gutter offset and hide numbers on marked
     // lines so the dot replaces them.
@@ -2153,7 +2401,8 @@ function App() {
       const onFunctionIcon = !!hitElement?.closest('[class*="folding-"], .go-test-gutter, .go-package-gutter')
       let line = event.target.position?.lineNumber
       if (!line) {
-        const resolved = editor.getTargetAtClientPoint(event.event.posx, event.event.posy)
+        const { clientX, clientY } = event.event.browserEvent
+        const resolved = editor.getTargetAtClientPoint(clientX, clientY)
         line = resolved?.position?.lineNumber
       }
       if (!line) return
@@ -2169,11 +2418,13 @@ function App() {
       }
       if (path?.endsWith('.go') && !onFunctionIcon) toggleBreakpointRef.current?.(path, line)
     })
-  }, [applyNavigation])
+  }, [applyNavigation, installGoNavigation])
 
-  const onSplitEditorMount = useCallback((editor: Monaco.editor.IStandaloneCodeEditor) => {
+  const onSplitEditorMount: OnMount = useCallback((editor, monaco) => {
     splitEditorRef.current = editor
-  }, [])
+    installGoNavigation(editor, monaco)
+    installGoTodoDecorations(editor, monaco)
+  }, [installGoNavigation])
 
   useEffect(() => {
     const editor = editorRef.current
@@ -2269,6 +2520,22 @@ function App() {
       // through the preferences matcher, and a second binding fires it twice.
       run: () => { void runFindUsages() },
     })
+    const extractVariableAction = editor.addAction({
+      id: 'mgland.refactor-extract-variable',
+      label: locale === 'zh-CN' ? '重构：提取变量…' : 'Refactor: Extract Variable…',
+      precondition: 'mglandGoAnyFile && !editorReadonly',
+      contextMenuGroupId: '1_modification',
+      contextMenuOrder: 2,
+      run: () => { void runRefactor(['refactor.extract.variable', 'refactor.extract.constant'], /variable/i) },
+    })
+    const extractFunctionAction = editor.addAction({
+      id: 'mgland.refactor-extract-function',
+      label: locale === 'zh-CN' ? '重构：提取函数…' : 'Refactor: Extract Function…',
+      precondition: 'mglandGoAnyFile && !editorReadonly',
+      contextMenuGroupId: '1_modification',
+      contextMenuOrder: 3,
+      run: () => { void runRefactor(['refactor.extract.function', 'refactor.extract.method']) },
+    })
     const goToImplementationAction = editor.addAction({
       id: 'mgland.go-to-implementation',
       label: t('跳转到实现'),
@@ -2340,11 +2607,12 @@ function App() {
       methodAction.dispose(); fileAction.dispose(); historyAction.dispose()
       breakpointAction.dispose(); bookmarkAction.dispose(); blameAction.dispose()
       constructorAction.dispose(); gettersAction.dispose(); modelListener.dispose()
-      findUsagesAction.dispose(); goToImplementationAction.dispose(); goToTestAction.dispose()
+      findUsagesAction.dispose(); extractVariableAction.dispose(); extractFunctionAction.dispose()
+      goToImplementationAction.dispose(); goToTestAction.dispose()
       generateAction.dispose(); editBreakpointAction.dispose()
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [monacoApi, t, gitBlame?.path, toggleBreakpoint, toggleBookmark])
+  }, [monacoApi, t, locale, gitBlame?.path, toggleBreakpoint, toggleBookmark, runFindUsages, runRefactor, goToImplementationNow, goToTestNow])
 
   useEffect(() => {
     const editor = editorRef.current
@@ -2607,35 +2875,38 @@ function App() {
     setRevealPath(null)
   }, [expanded, revealPath, sideView, sidebarOpen, tree])
 
-  /** Open the workspace .editorconfig, creating a GoLand-flavored default when missing. */
+  /** Open the project's MGLand style file inside its hidden config folder. */
   const openStyleFile = useCallback(async () => {
     if (!root) {
       notify(localeRef.current === 'zh-CN' ? '请先打开一个项目。' : 'Open a project first.', 'error')
       return
     }
-    const path = joinPath(root, '.editorconfig')
+    const path = projectCodeStylePath(root)
     try {
-      await command<string>('read_file', { path })
-    } catch {
-      const template = [
-        'root = true',
-        '',
-        '[*]',
-        'charset = utf-8',
-        'end_of_line = lf',
-        'insert_final_newline = true',
-        'trim_trailing_whitespace = true',
-        '',
-        '[*.go]',
-        'indent_style = tab',
-        'indent_size = 4',
-        '',
-      ].join('\n')
-      try { await command('create_file_with_content', { path, content: template }) }
-      catch (cause) { notify(formatError(cause), 'error'); return }
+      // The initial load may still be migrating browser-local settings. Wait
+      // for it and any queued settings save before creating or opening the file.
+      const load = projectStyleLoadRef.current
+      if (load?.root === root) await load.promise.catch(() => undefined)
+      await projectStyleSaveRef.current.catch(() => undefined)
+      if (rootRef.current !== root) return
+      if (!await projectCodeStyleExists(root, projectCodeStyleIO)) {
+        const previous = loadProjectGoOverrides(root)
+        const initial = Object.keys(previous).length ? previous : projectGoOverrides
+        const created = await createProjectCodeStyleIfMissing(root, initial, projectCodeStyleIO)
+        if (created) {
+          projectStyleDiskRef.current.set(root, serializeProjectCodeStyle(initial))
+          if (Object.keys(previous).length) saveProjectGoOverrides(root, {})
+        } else await reloadProjectCodeStyle(root)
+        const entries = await command<FileEntry[]>('list_directory', { path: root })
+        setTree((current) => ({ ...current, [root]: entries }))
+      }
+    } catch (cause) {
+      notify(formatError(cause), 'error')
+      return
     }
+    if (rootRef.current !== root) return
     await openFile(path)
-  }, [formatError, notify, openFile, root])
+  }, [formatError, notify, openFile, projectGoOverrides, reloadProjectCodeStyle, root])
 
   // Native menu items reuse the shortcut dispatchers plus a few menu-only actions.
   goGetRef.current = (target) => {
@@ -2794,7 +3065,7 @@ function App() {
         selectedLocalHistoryEntry={selectedLocalHistoryEntry}
         setSelectedLocalHistoryId={setSelectedLocalHistoryId} selectedLocalDiff={selectedLocalDiff}
         selectedHistoryEntry={selectedHistoryEntry} openGitFileCommitDiff={openGitFileCommitDiff}
-        projectFiles={projectFiles} searchRevision={searchRevision} onReplaced={onReplaced}
+        projectFiles={projectFiles} openDocuments={tabs} searchRevision={searchRevision} onReplaced={onReplaced}
         debugState={debugState} debugFrames={debugFrames} debugSelectedFrameIndex={debugSelectedFrameIndex}
         debugSelectFrame={hookSelectFrame} debugVariables={debugVariables} debugExpandVariable={expandVariable}
         debugConsole={debugConsole} debugControl={debugControl} debugCurrentThreadId={debugCurrentThreadId}
@@ -2865,17 +3136,16 @@ function App() {
       setPaletteSelection={setPaletteSelection} items={paletteItems} closePalette={closePalette}
     />}
 
-    {settingsOpen && <SettingsPane preferences={goScope === 'project' ? { ...preferences, go: effectiveGo } : preferences} onChange={(next) => {
-      if (goScope === 'project' && root) {
+    {settingsOpen && <SettingsPane preferences={projectStyleReady && goScope === 'project' ? { ...preferences, go: effectiveGo } : preferences} onChange={(next) => {
+      if (projectStyleReady && goScope === 'project' && root) {
         const changed = (Object.keys(next.go) as (keyof GoPreferences)[]).filter((key) => next.go[key] !== preferences.go[key])
         const overrides = Object.fromEntries(changed.map((key) => [key, next.go[key]])) as Partial<GoPreferences>
-        saveProjectGoOverrides(root, overrides)
-        setProjectGoOverrides(overrides)
+        persistProjectGoOverrides(root, overrides)
         setPreferences(savePreferences({ ...next, go: preferences.go }))
       } else {
         setPreferences(savePreferences(next))
       }
-    }} locale={locale} onLocaleChange={setLocale} initialSection={settingsSection} versions={versions} lspState={lspState} onInstallGopls={() => void runTask('install_gopls')} onRestartGopls={() => setLspEpoch((value) => value + 1)} goToolBusy={!!runningTask} onInstallTool={(task) => void runTask(task)} pluginManager={{ projectRoot: root, busy: !!runningTask, onRunGoTask: runTask, onOpenFile: openFile, nativePlugins, onNativePluginsChanged: refreshNativePlugins }} onClose={() => setSettingsOpen(false)} goScope={goScope} onGoScopeChange={setGoScope} hasProject={!!root} projectOverrideCount={Object.keys(projectGoOverrides).length} onClearProjectGoOverrides={() => { if (root) { saveProjectGoOverrides(root, {}); setProjectGoOverrides({}) } }} onOpenStyleFile={() => void openStyleFile()} />}
+    }} locale={locale} onLocaleChange={setLocale} initialSection={settingsSection} versions={versions} lspState={lspState} onInstallGopls={() => void runTask('install_gopls')} onRestartGopls={() => setLspEpoch((value) => value + 1)} goToolBusy={!!runningTask} onInstallTool={(task) => void runTask(task)} pluginManager={{ projectRoot: root, busy: !!runningTask, onRunGoTask: runTask, onOpenFile: openFile, nativePlugins, onNativePluginsChanged: refreshNativePlugins }} onClose={() => setSettingsOpen(false)} goScope={projectStyleReady ? goScope : 'global'} onGoScopeChange={setGoScope} hasProject={!!root} projectScopeAvailable={projectStyleReady} projectOverrideCount={Object.keys(projectGoOverrides).length} onClearProjectGoOverrides={() => { if (root) persistProjectGoOverrides(root, {}) }} onOpenStyleFile={() => void openStyleFile()} />}
     {lineJumpOpen && <div className="overlay-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) setLineJumpOpen(false) }}>
       <form className="line-jump-dialog" role="dialog" aria-modal="true" aria-label={t('跳转到行:列')} onSubmit={(event) => { event.preventDefault(); submitLineJump() }}>
         <label htmlFor="mg-line-jump-input">{t('跳转到行:列')}</label>

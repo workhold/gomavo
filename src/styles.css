@@ -390,7 +390,7 @@ kbd { color: var(--text-primary); background: var(--surface-hover); border-color
 .activity-spacer { flex: 1; }
 .sidebar {
   width: 300px;
-  background: var(--surface-panel);
+  background: var(--surface-sidebar);
   border: 1px solid var(--surface-raised);
   border-radius: 11px;
   overflow: hidden;
@@ -464,7 +464,7 @@ kbd { color: var(--text-primary); background: var(--surface-hover); border-color
   border: 1px solid var(--surface-root);
   border-bottom: 1px solid var(--surface-root);
   border-radius: 11px 11px 0 0;
-  background: var(--surface-panel);
+  background: var(--surface-editor);
 }
 .editor-tab {
   position: relative;
@@ -490,9 +490,9 @@ kbd { color: var(--text-primary); background: var(--surface-hover); border-color
   border: 1px solid var(--surface-root);
   border-top: 0;
   border-radius: 0 0 11px 11px;
-  background: var(--surface-panel);
+  background: var(--surface-editor);
 }
-.monaco-editor, .monaco-editor-background, .monaco-editor .margin { background-color: var(--surface-panel) !important; }
+.monaco-editor, .monaco-editor-background, .monaco-editor .margin { background-color: var(--surface-editor) !important; }
 .go-test-gutter { cursor: pointer; }
 .go-test-gutter::before { content: '▶'; display: block; width: 18px; height: 20px; color: #71bf78; font-size: 12px; line-height: 20px; text-align: center; }
 .go-test-gutter.go-test-pass::before { content: '✓'; color: #79c987; font-size: 15px; font-weight: 700; }
@@ -519,6 +519,26 @@ kbd { color: var(--text-primary); background: var(--surface-hover); border-color
   overflow: hidden;
   background: var(--surface-panel);
 }
+.panel-resize-handle {
+  height: 9px;
+  flex: none;
+  position: relative;
+  cursor: row-resize;
+  touch-action: none;
+}
+.panel-resize-handle::after {
+  content: '';
+  position: absolute;
+  top: 3px;
+  left: 50%;
+  width: 38px;
+  height: 3px;
+  border-radius: 3px;
+  transform: translateX(-50%);
+  background: var(--surface-active);
+}
+.panel-resize-handle:hover::after, .panel-resize-handle:focus-visible::after { background: var(--accent-strong); }
+.panel-resize-handle:focus-visible { outline: 2px solid var(--accent-strong); outline-offset: -2px; }
 .bottom-panel.collapsed { height: 38px; }
 .panel-tabs { height: 38px; align-items: center; gap: 2px; padding: 0 7px; border-bottom: 1px solid var(--surface-hover); }
 .panel-tabs > button:not(.icon-button) {
@@ -902,6 +922,8 @@ html.theme-light .tree-lib-root:hover, html.theme-light .tree-lib-modules:hover,
   /* Islands Dark official palette: gray-10/20/30/40/50/60, text gray-130/100/80 */
   --surface-root: #26282c;      /* layer-1: main window bg */
   --surface-panel: #191a1c;     /* layer-0: editor/tool window bg */
+  --surface-sidebar: #2a2c31;
+  --surface-editor: #111214;
   --surface-raised: #33353b;    /* layer-2: floating layers */
   --surface-elevated: #26282c;  /* gray-30 */
   --surface-hover: #40434a;     /* gray-50 */
@@ -913,6 +935,18 @@ html.theme-light .tree-lib-root:hover, html.theme-light .tree-lib-modules:hover,
   --text-muted: #9fa2a8;        /* gray-100 text-muted */
   --accent: #3871e1;            /* blue-80 accent-brand */
   --accent-hover: #538af9;      /* blue-90 */
+  /* Monaco portals its context menu outside the editor, so its theme vars
+     must also be available on the document root. */
+  --vscode-menu-background: #292b30;
+  --vscode-menu-foreground: #e1e3e8;
+  --vscode-menu-border: #555960;
+  --vscode-menu-separatorBackground: #4c4f56;
+  --vscode-list-hoverBackground: #365487;
+  --vscode-list-hoverForeground: #ffffff;
+  --vscode-editorWidget-border: #555960;
+  --vscode-widget-shadow: #00000080;
+  --vscode-cornerRadius-medium: 5px;
+  --vscode-cornerRadius-large: 8px;
 }
 
 html.theme-light {
@@ -920,6 +954,8 @@ html.theme-light {
   color-scheme: light;
   --surface-root: #e9eaee;      /* layer-0/gray-150: main window bg */
   --surface-panel: #f7f8fa;     /* gray-160: editor/tool window bg */
+  --surface-sidebar: #f7f8fa;
+  --surface-editor: #ffffff;
   --surface-raised: #ffffff;    /* layer-2 */
   --surface-elevated: #f7f8fa;  /* gray-160 */
   --surface-hover: #dddfe4;     /* gray-140 */
@@ -931,6 +967,14 @@ html.theme-light {
   --text-muted: #5f6269;        /* gray-70 */
   --accent: #3871e1;            /* blue-80, same as dark */
   --accent-hover: #538af9;      /* blue-90 */
+  --vscode-menu-background: #ffffff;
+  --vscode-menu-foreground: #202124;
+  --vscode-menu-border: #c9ccd2;
+  --vscode-menu-separatorBackground: #d1d3d9;
+  --vscode-list-hoverBackground: #d9e7ff;
+  --vscode-list-hoverForeground: #111827;
+  --vscode-editorWidget-border: #c9ccd2;
+  --vscode-widget-shadow: #00000033;
   /* legacy variables (older blocks reference these directly) */
   --background: #f7f8fa;
   --title: #f7f8fa;
@@ -1214,7 +1258,7 @@ html.theme-light .empty-shortcuts kbd { background: var(--surface-elevated); bor
 /* Monaco surface follows the active theme even if its internal vars lag */
 html:not(.theme-light) .monaco-editor,
 html:not(.theme-light) .monaco-editor-background,
-html:not(.theme-light) .monaco-editor .margin { background-color: var(--surface-panel); }
+html:not(.theme-light) .monaco-editor .margin { background-color: var(--surface-editor); }
 html.theme-light .monaco-editor,
 html.theme-light .monaco-editor-background,
 html.theme-light .monaco-editor .margin { background-color: var(--surface-active); }
@@ -1326,7 +1370,13 @@ html.theme-light .markdown-preview-pane { background: #ffffff; }
 .todo-item-row { padding-left: 30px; font-size: 12px; }
 .todo-item-row:hover { background: var(--hover); }
 .todo-item-row small { color: var(--text-secondary); }
-.todo-line-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-secondary); }
+.todo-line-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-muted); }
+.todo-keyword { color: #f2c45d; font-weight: 700; }
+html.theme-light .todo-keyword { color: #8c6200; }
+.monaco-editor .mgland-todo-marker { color: #f2c45d !important; font-weight: 700; }
+html.theme-light .monaco-editor .mgland-todo-marker { color: #8c6200 !important; }
+
+.monaco-editor .mgland-navigation-link { text-decoration: underline; text-underline-offset: 2px; cursor: pointer; color: var(--vscode-editorLink-activeForeground) !important; }
 
 /* Find Usages tool window. */
 .usages-pane { display: flex; flex-direction: column; height: 100%; min-height: 0; }

@@ -106,6 +106,8 @@ The item-by-item comparison against **GoLand 2026.1.1** — including what was v
 
 ## Project code style
 
+Settings → Editor → Code Style writes current-project Go overrides to `.mgland/code-style.json`. Existing project overrides stored in browser local storage move there when the project opens. Optimize Imports uses gopls to sort imports in standard-library, third-party, then matching local-prefix groups, with one blank line between nonempty groups. The local-prefix field accepts comma-separated import paths. Those ordering and spacing rules are defined by gopls; the Code Style page shows them alongside the editable prefix and save action.
+
 After you create or edit `.editorconfig` in a project, MGLand merges configs from the project root and subdirectories by file path; closer configs win, and `root = true` stops the upward search. Supported keys are `indent_style`, `indent_size`, `tab_width`, `end_of_line`, `trim_trailing_whitespace`, and `insert_final_newline`, with `unset` restoring editor defaults. Indentation applies to open files; line-ending and whitespace rules apply on save, and saving an `.editorconfig` refreshes indentation for open files. Search stops at the current project directory, and files are still read and written as UTF-8.
 
 ```ini

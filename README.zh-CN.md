@@ -106,6 +106,8 @@ MGLand 沿用 GoLand 的布局、工作流和 macOS 键位，但它是一个独�
 
 ## 项目代码样式
 
+「设置 → 编辑器 → 代码样式」会把当前项目的 Go 风格覆盖值保存到 `.mgland/code-style.json`。项目打开时，旧版存于浏览器本地存储的覆盖值会迁移到此文件。保存时整理导入由 gopls 执行，顺序为标准库、第三方模块、匹配本地前缀的模块；非空分组之间保留一个空行，前缀可用逗号分隔。该顺序和空行规则由 gopls 定义，代码样式页面会展示规则及可编辑的本地前缀和保存动作。
+
 在项目中创建或编辑 `.editorconfig` 后，MGLand 会按文件路径合并项目根目录与子目录中的配置；更近的配置优先，`root = true` 会停止向上查找。支持 `indent_style`、`indent_size`、`tab_width`、`end_of_line`、`trim_trailing_whitespace` 和 `insert_final_newline`，也支持用 `unset` 恢复编辑器默认值。缩进设置会应用到打开的文件，换行和空白规则在保存时应用；保存 `.editorconfig` 后，已打开文件的缩进设置会刷新。搜索范围止于当前项目目录，文件仍按 UTF-8 读写。
 
 ```ini
