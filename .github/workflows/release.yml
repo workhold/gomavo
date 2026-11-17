@@ -52,7 +52,7 @@ jobs:
         with:
           tagName: ${{ github.ref_name }}
           releaseName: 'GoMavo ${{ github.ref_name }}'
-          releaseBody: 'Download the installer for your platform: .dmg for macOS (Apple Silicon & Intel), .msi / -setup.exe for Windows. Running the app requires a Go toolchain and Git on the machine.'
+          releaseBody: 'GoMavo is the new name for MG Land. Existing settings and project code style are migrated automatically, and older native plugin packages remain importable. Download the installer for your platform: .dmg for macOS (Apple Silicon & Intel), .msi / -setup.exe for Windows. Running the app requires a Go toolchain and Git on the machine.'
           releaseDraft: false
           prerelease: false
           args: ${{ matrix.args }}
