@@ -54,6 +54,7 @@ import { useLsp } from './app/hooks/useLsp'
 import { useGit } from './app/hooks/useGit'
 import { useTasks } from './app/hooks/useTasks'
 import { useDebugger, type BreakpointSpec } from './app/hooks/useDebugger'
+import { validBreakpointLines } from './lib/debug/breakpoints'
 
 /** Parse `KEY=VALUE` lines from a saved run configuration into env vars. */
 function parseEnvVars(text: string | null | undefined): Record<string, string> | undefined {
@@ -220,6 +221,7 @@ function App() {
   activePathRef.current = activePath
   const runEditorContextRef = useRef<((line?: number, fileFallback?: boolean) => boolean) | null>(null)
   const toggleBreakpointRef = useRef<((path: string, line: number) => void) | null>(null)
+  const pruneBreakpointsRef = useRef<((path: string, lineCount: number) => void) | null>(null)
   const lineNumbersFormatterRef = useRef<((line: number) => string) | null>(null)
   const createTestFromEditorRef = useRef<((line?: number) => void) | null>(null)
   const openGitFileHistoryRef = useRef<((path: string) => void) | null>(null)
@@ -1482,6 +1484,7 @@ function App() {
   }, [])
 
   const persistBreakpoints = useCallback((next: Record<string, number[]>) => {
+    breakpointsRef.current = next
     setBreakpoints(next)
     const activePath = activePathRef.current
     if (activePath) void syncBreakpoints(activePath, next[activePath] ?? [])
@@ -1489,6 +1492,22 @@ function App() {
     const formatter = lineNumbersFormatterRef.current
     if (formatter) editorRef.current?.updateOptions({ lineNumbers: formatter })
   }, [lineNumbersFormatter, syncBreakpoints])
+
+  const pruneBreakpoints = useCallback((path: string, lineCount: number) => {
+    const current = breakpointsRef.current[path]
+    if (!current?.length) return
+    const valid = validBreakpointLines(current, lineCount)
+    if (valid.length === current.length && valid.every((line, index) => line === current[index])) return
+    persistBreakpoints({ ...breakpointsRef.current, [path]: valid })
+    setBreakpointSpecs((currentSpecs) => {
+      const fileSpecs = currentSpecs[path]
+      if (!fileSpecs) return currentSpecs
+      const nextSpecs = Object.fromEntries(Object.entries(fileSpecs).filter(([line]) => valid.includes(Number(line))))
+      const next = { ...currentSpecs, [path]: nextSpecs }
+      breakpointSpecsRef.current = next
+      return next
+    })
+  }, [persistBreakpoints])
 
   const toggleBreakpoint = useCallback((path: string, line: number) => {
     const current = breakpointsRef.current[path] ?? []
@@ -1515,6 +1534,7 @@ function App() {
     })
   }, [])
   toggleBreakpointRef.current = toggleBreakpoint
+  pruneBreakpointsRef.current = pruneBreakpoints
   lineNumbersFormatterRef.current = lineNumbersFormatter
 
   /** Project-wide replace finished: sync open tabs and gopls with the new contents. */
@@ -2342,7 +2362,16 @@ function App() {
         updateGoContexts(goContextsLine)
       })
     }
-    editor.onDidChangeModelContent(() => scheduleGoContexts())
+    const pruneModelBreakpoints = () => {
+      const model = editor.getModel()
+      if (model) pruneBreakpointsRef.current?.(uriToPath(model.uri.toString()), model.getLineCount())
+    }
+    editor.onDidChangeModel(pruneModelBreakpoints)
+    editor.onDidChangeModelContent(() => {
+      scheduleGoContexts()
+      pruneModelBreakpoints()
+    })
+    pruneModelBreakpoints()
     editor.addAction({
       id: 'gomavo.run-go-test-context',
       label: '运行光标处测试方法或当前测试文件',
@@ -2399,18 +2428,19 @@ function App() {
       if (!inGutter) return
       // Folding arrows and our own test-run icons keep their own actions.
       const onFunctionIcon = !!hitElement?.closest('[class*="folding-"], .go-test-gutter, .go-package-gutter')
-      let line = event.target.position?.lineNumber
-      if (!line) {
-        const { clientX, clientY } = event.event.browserEvent
-        const resolved = editor.getTargetAtClientPoint(clientX, clientY)
-        line = resolved?.position?.lineNumber
-      }
+      const { clientY } = event.event.browserEvent
+      // A breakpoint glyph is translated over the line-number lane. Monaco
+      // can report no position for that transformed DOM target, so hit-test
+      // the same row in the content area instead.
+      const contentX = editorHost.getBoundingClientRect().left + editor.getLayoutInfo().contentLeft + 4
+      const line = editor.getTargetAtClientPoint(contentX, clientY)?.position?.lineNumber
+        ?? event.target.position?.lineNumber
       if (!line) return
       // Test files: the run icons (and the rest of the row, matching the old
       // gutter behavior) run the test under the line. Source files: any click
       // in the gutter row toggles a breakpoint, GoLand-style.
       const model = editor.getModel()
-      const path = model ? tabsRef.current.find((file) => fileUri(file.path) === model.uri.toString())?.path : null
+      const path = model ? tabsRef.current.find((file) => fileUri(file.path) === model.uri.toString())?.path ?? uriToPath(model.uri.toString()) : null
       if (path?.endsWith('_test.go')) {
         if (onFunctionIcon || !path.slice(0, path.lastIndexOf('/')).includes('/')) runEditorContextRef.current?.(line, false)
         else runEditorContextRef.current?.(line, false)
@@ -2676,7 +2706,7 @@ function App() {
     if (!editor || !model || !monacoApi) return
     const path = uriToPath(model.uri.toString())
     const matches: Monaco.editor.IModelDeltaDecoration[] = []
-    for (const line of breakpoints[path] ?? []) {
+    for (const line of validBreakpointLines(breakpoints[path] ?? [], model.getLineCount())) {
       matches.push({
         range: new monacoApi.Range(line, 1, line, 1),
         options: {
