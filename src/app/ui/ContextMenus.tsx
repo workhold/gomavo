@@ -200,14 +200,14 @@ export function ContextMenus(props: ContextMenusProps) {
       }}>{context.entry.is_dir ? expanded.has(context.entry.path) ? <ChevronDown size={14} /> : <ChevronRight size={14} /> : <File size={14} />}{t(context.entry.is_dir ? expanded.has(context.entry.path) ? '收起文件夹' : '展开文件夹' : '打开文件')}</button>
       {!context.entry.is_dir && <button role="menuitem" type="button" onClick={() => { const path = context.entry.path; closeContextMenu(true); void openGitFileHistory(path) }}><History size={14} />{t('查看文件历史')}</button>}
       {context.entry.is_dir && <><div className="menu-divider" role="separator" />
-        <button role="menuitem" type="button" onClick={() => { runSelection('run', { scope: 'package', targetPath: context.entry.path, label: `运行 ${context.entry.name}` }); closeContextMenu(true) }}><Play size={14} />运行此 Go 包</button>
-        <button role="menuitem" type="button" onClick={() => { runSelection('test', { scope: 'package', targetPath: context.entry.path, label: `测试 ${context.entry.name}` }); closeContextMenu(true) }}><FlaskConical size={14} />测试此 Go 包</button>
-        <button role="menuitem" type="button" onClick={() => { runSelection('test', { scope: 'directory', targetPath: context.entry.path, label: `测试 ${context.entry.name}/...` }); closeContextMenu(true) }}><FlaskConical size={14} />测试此目录及子目录</button>
+        <button role="menuitem" type="button" onClick={() => { runSelection('run', { scope: 'package', targetPath: context.entry.path, label: `go run ${context.entry.name}` }); closeContextMenu(true) }}><Play size={14} />{t('运行此 Go 包')}</button>
+        <button role="menuitem" type="button" onClick={() => { runSelection('test', { scope: 'package', targetPath: context.entry.path, label: `go test ${context.entry.name}` }); closeContextMenu(true) }}><FlaskConical size={14} />{t('测试此 Go 包')}</button>
+        <button role="menuitem" type="button" onClick={() => { runSelection('test', { scope: 'directory', targetPath: context.entry.path, label: `go test ${context.entry.name}/...` }); closeContextMenu(true) }}><FlaskConical size={14} />{t('测试此目录及子目录')}</button>
       </>}
       {!context.entry.is_dir && context.entry.name.endsWith('.go') && <><div className="menu-divider" role="separator" />
         {!context.entry.name.endsWith('_test.go') && <button role="menuitem" type="button" onClick={() => { const path = context.entry.path; closeContextMenu(true); void createTestsForSource(path) }}><FlaskConical size={14} />{t('创建文件测试方法')}</button>}
-        {context.entry.name.endsWith('_test.go') ? <button role="menuitem" type="button" onClick={() => { runSelection('test', { scope: 'file', targetPath: context.entry.path, label: `测试 ${context.entry.name}` }); closeContextMenu(true) }}><FlaskConical size={14} />运行此文件测试</button> : <button role="menuitem" type="button" onClick={() => { runSelection('run', { scope: 'file', targetPath: context.entry.path, label: `运行 ${context.entry.name} 所在包` }); closeContextMenu(true) }}><Play size={14} />运行此文件所在包</button>}
-        <button role="menuitem" type="button" onClick={() => { runSelection('test', { scope: 'package', targetPath: context.parent, label: `测试 ${context.entry.name} 所在包` }); closeContextMenu(true) }}><FlaskConical size={14} />测试当前包</button>
+        {context.entry.name.endsWith('_test.go') ? <button role="menuitem" type="button" onClick={() => { runSelection('test', { scope: 'file', targetPath: context.entry.path, label: `go test ${context.entry.name}` }); closeContextMenu(true) }}><FlaskConical size={14} />{t('运行此文件测试')}</button> : <button role="menuitem" type="button" onClick={() => { runSelection('run', { scope: 'file', targetPath: context.entry.path, label: `go run ${context.entry.name}` }); closeContextMenu(true) }}><Play size={14} />{t('运行此文件所在包')}</button>}
+        <button role="menuitem" type="button" onClick={() => { runSelection('test', { scope: 'package', targetPath: context.parent, label: `go test ${context.entry.name}` }); closeContextMenu(true) }}><FlaskConical size={14} />{t('测试当前包')}</button>
       </>}
       <div className="menu-divider" role="separator" />
       <button role="menuitem" type="button" onClick={() => void copyEntryPath(context.entry.path)}><Copy size={14} />{t('复制路径')}</button>
@@ -240,8 +240,8 @@ export function ContextMenus(props: ContextMenusProps) {
         <button role="menuitem" type="button" onClick={() => {
           const path = tabContextFile.path
           closeTabContextMenu(true)
-          if (path.endsWith('_test.go')) runSelection('test', { scope: 'file', targetPath: path, label: `测试 ${displayName(path)}` })
-          else runSelection('run', { scope: 'file', targetPath: path, label: `运行 ${displayName(path)} 所在包` })
+          if (path.endsWith('_test.go')) runSelection('test', { scope: 'file', targetPath: path, label: `go test ${displayName(path)}` })
+          else runSelection('run', { scope: 'file', targetPath: path, label: `go run ${displayName(path)}` })
         }}><Play size={14} /><span className="tab-menu-label">{tabMenuText(`运行 '${displayName(tabContextFile.path)}'`, `Run '${displayName(tabContextFile.path)}'`)}</span></button>
         <button role="menuitem" type="button" onClick={() => { closeTabContextMenu(true); setConfigMenu(true) }}><Settings2 size={14} /><span className="tab-menu-label">{tabMenuText('修改运行配置…', 'Edit Run Configuration…')}</span></button>
       </>}

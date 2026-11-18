@@ -20,7 +20,7 @@ GoMavo is a focused Go IDE for macOS: one project per window, familiar macOS key
 - **Real Go language services** — completion, hover documentation, diagnostics, semantic highlighting, go to definition (Go SDK and module cache open as read-only tabs), and format-current-file, all via `gopls`.
 - **Built-in Delve debugger** — click the gutter or press F9 to toggle breakpoints, and ⌃D debugs the context under the cursor; call stack, variables, and a debug console live in the Debug tool window.
 - **Integrated testing** — quick-run icons in the gutter of `_test.go` files, ⌃R runs the test under the cursor or the whole file, results appear as a per-case tree with single-test rerun, and test coverage highlighting comes from `go test -cover`.
-- **Git tool window** — branch switching, staged/unstaged changes with unified diffs, commit, recent history, per-file history, and line-by-line blame.
+- **Git tool window** — branch switching, staged/unstaged changes with unified or side-by-side diffs, commit, recent history, per-file history, and line-by-line blame.
 - **Local-first everything** — an integrated PTY terminal, `go mod tidy/download`, `go vet`, `go fmt`, `.editorconfig` support, and a native plugin system. UI available in English and 简体中文.
 
 <table>
@@ -40,9 +40,13 @@ GoMavo is a focused Go IDE for macOS: one project per window, familiar macOS key
 
 ## Requirements and getting started
 
-Building from source requires Node.js, pnpm, Rust/Cargo, and a Go toolchain, plus the Tauri 2 system dependencies for your OS; the build scripts compile `gopls` and `dlv` (Delve) automatically before packaging and bundle them into the package. Running the packaged app only requires a Go toolchain and Git on the machine — make sure `go version` and `git --version` work; no separate `gopls` install is needed.
+Building from source requires Node.js 22 or newer, pnpm 11.25.0, Rust/Cargo, and a Go toolchain, plus the Tauri 2 system dependencies for your OS; the build scripts compile `gopls` and `dlv` (Delve) automatically before packaging and bundle them into the package. Running the packaged app only requires a Go toolchain and Git on the machine — make sure `go version` and `git --version` work; no separate `gopls` install is needed.
 
 The app prefers the bundled `gopls` and `dlv` and falls back to `PATH`, `GOBIN`, `GOPATH/bin`, and similar locations. You can still install or upgrade `gopls` from the status bar at the bottom right after opening a project; that step needs access to the Go module proxy.
+
+When upgrading from MG Land on macOS, quit the old app and remove `MG Land.app` from Applications before copying `GoMavo.app` from the DMG. If Launchpad or the Dock still shows MG Land, remove the old icon and reopen `GoMavo.app`. The bundle identifier remains `dev.mgland.ide` to preserve existing app data; keeping both app bundles can make macOS open the older one.
+
+Settings → Go lets each window select a full Go release such as `go1.26.3`. Go downloads and verifies a missing toolchain on first selection, then uses it for tasks, new terminals, debugging, and `gopls` in that window. The selection lasts for the window session. GoMavo checks `gopls` every 20 seconds and retries a failed server with a bounded delay.
 
 ```bash
 pnpm install
@@ -50,6 +54,12 @@ pnpm tauri dev
 ```
 
 After launch, click the project name at the top left to choose "New Window", "New Project", or "Open Project"; the macOS File → New Window, File → New → Project, and File → Open Project menu items provide the same entries, and the Dock icon's right-click menu can create a new window. New windows show the project picker, where you can open an existing project or create a new Go project; the previous project is not reopened automatically. Creating a project makes a folder in the parent directory you choose and runs `go mod init`. Opening or creating another project from an existing window spawns an independent window, and each window keeps its own project state. The app restores the last opened directory at startup. Settings open from the macOS app menu (Settings… or ⌘,). Run `pnpm tauri build` to produce the desktop package. `pnpm dev` only previews the browser UI; files, Go commands, Git, the PTY terminal, and `gopls` depend on the Tauri desktop backend.
+
+### macOS release signing
+
+An Apple certificate is optional while publishing preview builds. Without one, tag releases still publish the macOS installer, but it is **not Developer ID signed or Apple notarized**. macOS may show a “move to Trash” warning for a downloaded build and require manual approval in System Settings → Privacy & Security. Release notes state when the installer is unsigned.
+
+For signed distribution, configure five GitHub Actions secrets: `APPLE_CERTIFICATE` (base64-encoded `.p12` containing the certificate and private key), `APPLE_CERTIFICATE_PASSWORD` (the `.p12` export password), `APPLE_ID`, `APPLE_PASSWORD` (an Apple ID app-specific password), and `APPLE_TEAM_ID`. A paid Apple Developer Program membership is required for notarization. Export the certificate from Keychain Access and encode it with `openssl base64 -A -in DeveloperID.p12 -out DeveloperID.p12.b64`; store the file contents as `APPLE_CERTIFICATE`. Keep the `.p12` and passwords out of the repository. With all five secrets, the workflow signs the bundled `gopls` and `dlv` tools and the app, then verifies its notarization ticket. A partial configuration fails the release to avoid publishing an installer that appears ready for signed distribution. Earlier DMGs are not retroactively notarized; publish a new tag after configuring the secrets.
 
 ## Implemented workflows
 
@@ -63,7 +73,7 @@ After launch, click the project name at the top left to choose "New Window", "Ne
 | Git | The Git tool window shows branches and staged/unstaged state; the Project tree and editor tabs color files by status. The Project tree file and editor context menus show a file's Git history, and clicking a commit shows its diff. You can also view the current text diff, stage/unstage, commit, and browse recent commits, and the editor context menu shows line-by-line Git blame. Local branches can be created and switched from the toolbar. Git features require the local Git CLI and an open Git repository directory. |
 | Terminal | The Terminal tool window runs a shell in the project directory via xterm.js and a native PTY, with interactive input, resize handling, and restart after a session ends. |
 | Search and commands | Double-Shift searches files and actions; there are also ⌘⇧O Go to File, ⌘⌥O Go to Symbol, ⌘⇧F Find in Files, and ⌘E Recent Files. Enabled plugin commands also appear in action search. |
-| Bookmarks and local history | F3 toggles a bookmark on the current line; local edit history records changes per session and can show a diff per entry. |
+| Bookmarks and local history | F3 toggles a bookmark on the current line; local edit history records changes per session and can show each diff in unified or side-by-side layout. |
 | Plugins | In Settings → Plugins, pick a local `.gomavo-plugin` package or a JSON command manifest to import, enable/disable, and remove. Native plugins can register commands, Monaco completions, and hover providers; the JSON manifest only supports existing Go tasks or relative files inside the open project. See the [native plugin section](#gomavo-native-plugins) below and the two examples. There is no online marketplace yet. |
 | Settings | The top gear icon, ⌘,, or the macOS app menu's Settings… opens settings; the left tree and search locate existing options, including compact mode, editor font size/line height/tab/minimap/wrapping, Project tree, Git auto refresh, terminal font size, UI language, keymap, and plugin management. Preferences persist in local app storage. The UI switches between Chinese and English; a few newer panels remain Chinese-only. |
 

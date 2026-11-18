@@ -94,11 +94,11 @@ export function TitleBar(props: TitleBarProps) {
         <div className="menu-title">{t('最近项目')}</div>
         {recentProjects.slice(0, 6).map((path) => <button type="button" key={path} title={path} onClick={() => void openRecentProject(path)}><FolderOpen size={14} />{displayName(path)}</button>)}
       </>}</div>}</div>
-      <div className="branch-menu-anchor"><button className="vcs-widget" type="button" title="切换 Git 分支" disabled={!root || !!gitError} onClick={(event) => { event.stopPropagation(); if (root) void refreshGit(root, { refreshIgnored: true }); setBranchMenu((current) => !current) }}><GitBranch size={16} /><span>{git?.branch || 'Git'}</span><ChevronDown size={12} /></button>
-        {branchMenu && <div className="menu-popover branch-menu" onClick={(event) => event.stopPropagation()}><div className="menu-title">Git 分支</div><div className="branch-list">{gitBranches.map((branch) => <div key={branch.name} className={`branch-row ${branch.current ? 'current' : ''}`}>
+      <div className="branch-menu-anchor"><button className="vcs-widget" type="button" title={t('切换 Git 分支')} disabled={!root || !!gitError} onClick={(event) => { event.stopPropagation(); if (root) void refreshGit(root, { refreshIgnored: true }); setBranchMenu((current) => !current) }}><GitBranch size={16} /><span>{git?.branch || 'Git'}</span><ChevronDown size={12} /></button>
+        {branchMenu && <div className="menu-popover branch-menu" onClick={(event) => event.stopPropagation()}><div className="menu-title">{t('Git 分支')}</div><div className="branch-list">{gitBranches.map((branch) => <div key={branch.name} className={`branch-row ${branch.current ? 'current' : ''}`}>
           <button type="button" className="branch-switch" disabled={branch.current || branchBusy} onClick={() => void changeBranch(branch.name)}>{branch.current ? <Check size={14} /> : <GitBranch size={14} />}<span>{branch.name}</span></button>
           {!branch.current && <button type="button" className="branch-merge" title={t('合并到当前分支')} aria-label={t('合并到当前分支')} disabled={branchBusy} onClick={() => void gitMerge(branch.name)}><GitMerge size={13} /></button>}
-        </div>)}</div><div className="menu-divider" /><form className="branch-create" onSubmit={(event) => { event.preventDefault(); if (newBranchName.trim()) void changeBranch(newBranchName.trim(), true) }}><label htmlFor="new-branch-name">新建并切换分支</label><div><input id="new-branch-name" value={newBranchName} onChange={(event) => setNewBranchName(event.target.value)} placeholder="feature/name" /><button type="submit" disabled={!newBranchName.trim() || branchBusy}>创建</button></div></form></div>}
+        </div>)}</div><div className="menu-divider" /><form className="branch-create" onSubmit={(event) => { event.preventDefault(); if (newBranchName.trim()) void changeBranch(newBranchName.trim(), true) }}><label htmlFor="new-branch-name">{t('新建并切换分支')}</label><div><input id="new-branch-name" value={newBranchName} onChange={(event) => setNewBranchName(event.target.value)} placeholder="feature/name" /><button type="submit" disabled={!newBranchName.trim() || branchBusy}>{t('创建')}</button></div></form></div>}
       </div>
     </div>
     <div className="title-drag-region" data-tauri-drag-region aria-hidden="true" />
@@ -110,16 +110,16 @@ export function TitleBar(props: TitleBarProps) {
             {savedRunConfigurations.map((config) => <button type="button" key={config.id} onClick={() => { onSelectRunConfiguration(config.id); setConfigMenu(false) }}><Play size={14} /><span>{config.name}</span><small>{config.kind === 'test' ? 'go test' : config.kind === 'build' ? 'go build' : 'go run'}{config.race ? ' · -race' : ''}</small></button>)}
             <div className="menu-divider" />
           </>}
-          <button type="button" onClick={() => { setRunConfig('run'); setRunOptions({}); setConfigMenu(false) }}><Play size={14} /><span>运行项目根包</span><small>go run .</small></button>
-          {activeFile?.path.endsWith('.go') && <button type="button" onClick={() => { setRunConfig('run'); setRunOptions({ scope: 'file', targetPath: activeFile.path, label: `运行 ${displayName(activeFile.path)} 所在包` }); setConfigMenu(false) }}><Play size={14} /><span>运行当前 Go 包</span><small>{displayName(activeFile.path)}</small></button>}
+          <button type="button" onClick={() => { setRunConfig('run'); setRunOptions({}); setConfigMenu(false) }}><Play size={14} /><span>{t('运行项目根包')}</span><small>go run .</small></button>
+          {activeFile?.path.endsWith('.go') && <button type="button" onClick={() => { setRunConfig('run'); setRunOptions({ scope: 'file', targetPath: activeFile.path, label: `go run ${displayName(activeFile.path)}` }); setConfigMenu(false) }}><Play size={14} /><span>{t('运行当前 Go 包')}</span><small>{displayName(activeFile.path)}</small></button>}
           <div className="menu-divider" />
-          <button type="button" onClick={() => { setRunConfig('test'); setRunOptions({ scope: 'workspace' }); setConfigMenu(false) }}><FlaskConical size={14} /><span>运行全部测试</span><small>go test ./...</small></button>
+          <button type="button" onClick={() => { setRunConfig('test'); setRunOptions({ scope: 'workspace' }); setConfigMenu(false) }}><FlaskConical size={14} /><span>{t('运行全部测试')}</span><small>go test ./...</small></button>
           <button type="button" onClick={() => { runWithCoverage(); setConfigMenu(false) }}><FlaskConical size={14} /><span>{t('带覆盖率运行测试')}</span><small>-cover</small></button>
-          {activeFile?.path.endsWith('_test.go') && activeTestDeclarations.some((item) => item.startLine <= cursor.line && cursor.line <= item.endLine) && <button type="button" onClick={() => { runEditorContext(); setConfigMenu(false) }}><FlaskConical size={14} /><span>运行光标处测试方法</span><small>⌃R</small></button>}
-          {activeFile?.path.endsWith('_test.go') && <button type="button" onClick={() => { setRunConfig('test'); setRunOptions({ scope: 'file', targetPath: activeFile.path, label: `测试 ${displayName(activeFile.path)}` }); setConfigMenu(false) }}><FlaskConical size={14} /><span>运行当前文件测试</span><small>{displayName(activeFile.path)}</small></button>}
-          {activeFile?.path.endsWith('.go') && <button type="button" onClick={() => { setRunConfig('test'); setRunOptions({ scope: 'package', targetPath: activeFile.path.slice(0, -displayName(activeFile.path).length - 1), label: `测试 ${displayName(activeFile.path)} 所在包` }); setConfigMenu(false) }}><FlaskConical size={14} /><span>测试当前包</span><small>{displayName(activeFile.path)}</small></button>}
+          {activeFile?.path.endsWith('_test.go') && activeTestDeclarations.some((item) => item.startLine <= cursor.line && cursor.line <= item.endLine) && <button type="button" onClick={() => { runEditorContext(); setConfigMenu(false) }}><FlaskConical size={14} /><span>{t('运行光标处测试方法')}</span><small>⌃R</small></button>}
+          {activeFile?.path.endsWith('_test.go') && <button type="button" onClick={() => { setRunConfig('test'); setRunOptions({ scope: 'file', targetPath: activeFile.path, label: `go test ${displayName(activeFile.path)}` }); setConfigMenu(false) }}><FlaskConical size={14} /><span>{t('运行当前文件测试')}</span><small>{displayName(activeFile.path)}</small></button>}
+          {activeFile?.path.endsWith('.go') && <button type="button" onClick={() => { setRunConfig('test'); setRunOptions({ scope: 'package', targetPath: activeFile.path.slice(0, -displayName(activeFile.path).length - 1), label: `go test ${displayName(activeFile.path)}` }); setConfigMenu(false) }}><FlaskConical size={14} /><span>{t('测试当前包')}</span><small>{displayName(activeFile.path)}</small></button>}
           <div className="menu-divider" />
-          <button type="button" onClick={() => { setRunConfig('build'); setRunOptions({}); setConfigMenu(false) }}><Hammer size={14} /><span>编译全部包</span><small>go build ./...</small></button>
+          <button type="button" onClick={() => { setRunConfig('build'); setRunOptions({}); setConfigMenu(false) }}><Hammer size={14} /><span>{t('编译全部包')}</span><small>go build ./...</small></button>
           <div className="menu-divider" />
           <button type="button" onClick={() => { onEditRunConfigurations(); setConfigMenu(false) }}><Settings2 size={14} /><span>{t('编辑运行配置…')}</span></button>
         </div>}
@@ -138,9 +138,12 @@ export function TitleBar(props: TitleBarProps) {
       {iconButton(t('编译项目'), Hammer, () => void runTask('build'), !root || !!runningTask)}
       {iconButton(t('保存文件'), Save, () => { if (activePath) void saveFile(activePath) }, !activeFile || (activeFile.content === activeFile.savedContent && !(formatOnSave && activeFile.path.endsWith('.go') && lspState === 'ready')))}
       {iconButton(t('随处搜索'), Search, () => openPalette())}
-      {iconButton('插件', Package, () => { setSettingsSection('plugins'); setSettingsOpen(true) })}
-      {iconButton('设置', Settings2, () => { setSettingsSection('editor'); setSettingsOpen(true) })}
-      <Dropdown className="language-select" ariaLabel={t('界面语言')} value={locale} options={[{ value: 'zh-CN', label: '中文' }, { value: 'en-US', label: 'English' }]} onChange={(next) => setLocale(next as Locale)} />
+      {iconButton(t('插件'), Package, () => { setSettingsSection('plugins'); setSettingsOpen(true) })}
+      {iconButton(t('设置'), Settings2, () => { setSettingsSection('editor'); setSettingsOpen(true) })}
+      <Dropdown className="language-select" ariaLabel={t('界面语言')} value={locale} options={[{ value: 'zh-CN', label: '中文' }, { value: 'en-US', label: 'English' }]} onChange={(next) => {
+        // Let the popover close before changing every localized view in the app.
+        window.setTimeout(() => setLocale(next as Locale), 0)
+      }} />
     </div>
   </header>
 }

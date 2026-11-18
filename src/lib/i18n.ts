@@ -1,7 +1,7 @@
 export type Locale = 'zh-CN' | 'en-US'
 
 const STORAGE_KEY = 'gomavo.locale'
-const DEFAULT_LOCALE: Locale = 'zh-CN'
+const DEFAULT_LOCALE: Locale = 'en-US'
 
 const dictionary = {
   '正在获取依赖 {target}…': { 'zh-CN': '正在获取依赖 {target}…', 'en-US': 'Fetching dependency {target}…' },
@@ -14,6 +14,8 @@ const dictionary = {
   '↑↓ 选择 · ↵ 执行': { 'zh-CN': '↑↓ 选择 · ↵ 执行', 'en-US': '↑↓ Select · ↵ Run' },
   '安装': { 'zh-CN': '安装', 'en-US': 'Install' },
   '安装 gopls': { 'zh-CN': '安装 gopls', 'en-US': 'Install gopls' },
+  '插件': { 'zh-CN': '插件', 'en-US': 'Plugins' },
+  '设置': { 'zh-CN': '设置', 'en-US': 'Settings' },
   '外部库': { 'zh-CN': '外部库', 'en-US': 'External Libraries' },
   '版本控制': { 'zh-CN': '版本控制', 'en-US': 'Version control' },
   '后退': { 'zh-CN': '后退', 'en-US': 'Back' },
@@ -393,6 +395,21 @@ const dictionary = {
   '生成测试文件': { 'zh-CN': '生成测试文件', 'en-US': 'Generate test file' },
   '需要 Go 文件': { 'zh-CN': '需要 Go 文件', 'en-US': 'Needs a Go file' },
   '已应用：{name}': { 'zh-CN': '已应用：{name}', 'en-US': 'Applied: {name}' },
+  '运行此 Go 包': { 'zh-CN': '运行此 Go 包', 'en-US': 'Run this Go package' },
+  '测试此 Go 包': { 'zh-CN': '测试此 Go 包', 'en-US': 'Test this Go package' },
+  '测试此目录及子目录': { 'zh-CN': '测试此目录及子目录', 'en-US': 'Test this directory and subdirectories' },
+  '运行此文件测试': { 'zh-CN': '运行此文件测试', 'en-US': 'Run tests in this file' },
+  '运行此文件所在包': { 'zh-CN': '运行此文件所在包', 'en-US': 'Run this file’s package' },
+  '测试当前包': { 'zh-CN': '测试当前包', 'en-US': 'Test current package' },
+  '切换 Git 分支': { 'zh-CN': '切换 Git 分支', 'en-US': 'Switch Git branch' },
+  'Git 分支': { 'zh-CN': 'Git 分支', 'en-US': 'Git branches' },
+  '新建并切换分支': { 'zh-CN': '新建并切换分支', 'en-US': 'Create and switch branch' },
+  '运行项目根包': { 'zh-CN': '运行项目根包', 'en-US': 'Run project root package' },
+  '运行当前 Go 包': { 'zh-CN': '运行当前 Go 包', 'en-US': 'Run current Go package' },
+  '运行光标处测试方法': { 'zh-CN': '运行光标处测试方法', 'en-US': 'Run test at cursor' },
+  '运行当前文件测试': { 'zh-CN': '运行当前文件测试', 'en-US': 'Run current file tests' },
+  '编译全部包': { 'zh-CN': '编译全部包', 'en-US': 'Build all packages' },
+  '重跑 {name}': { 'zh-CN': '重跑 {name}', 'en-US': 'Rerun {name}' },
 } as const satisfies Record<string, Record<Locale, string>>
 
 export type MessageKey = keyof typeof dictionary

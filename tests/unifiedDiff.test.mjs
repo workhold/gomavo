@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { parseUnifiedDiff } from '../src/lib/unifiedDiff.ts'
+import { parseUnifiedDiff, sideBySideRows } from '../src/lib/unifiedDiff.ts'
 
 test('parses Git headers and line numbers across hunks', () => {
   const lines = parseUnifiedDiff([
@@ -58,4 +58,24 @@ test('distinguishes file markers from changed lines beginning with marker text',
   ].join('\n'))
   assert.deepEqual(lines.map((line) => line.kind), ['meta', 'meta', 'hunk', 'deletion', 'addition'])
   assert.deepEqual(lines.slice(3).map((line) => [line.oldLine, line.newLine]), [[1, null], [null, 1]])
+})
+
+test('aligns replacements, insertions, and deletions within each hunk', () => {
+  const rows = sideBySideRows(parseUnifiedDiff([
+    '@@ -1,4 +1,5 @@',
+    ' context',
+    '-old one',
+    '-old two',
+    '+new one',
+    '+new two',
+    '+new three',
+    ' tail',
+    '@@ -20 +21 @@',
+    '-removed',
+  ].join('\n')))
+  assert.deepEqual(rows.map((row) => row.kind === 'header' ? row.line.kind : [row.old?.kind ?? null, row.next?.kind ?? null]), [
+    'hunk', ['context', 'context'], ['deletion', 'addition'], ['deletion', 'addition'],
+    [null, 'addition'], ['context', 'context'], 'hunk', ['deletion', null],
+  ])
+  assert.deepEqual(rows[2].kind === 'content' ? [rows[2].old?.oldLine, rows[2].next?.newLine] : null, [2, 2])
 })

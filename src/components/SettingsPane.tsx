@@ -23,6 +23,9 @@ export interface SettingsPaneProps {
   onLocaleChange?: (locale: Locale) => void
   onOpenPlugins?: () => void
   versions?: ToolVersions | null
+  selectedGoToolchain?: string | null
+  onGoToolchainChange?: (version: string | null) => Promise<void>
+  goToolchainBusy?: boolean
   lspState?: 'idle' | 'starting' | 'ready' | 'missing' | 'error'
   onInstallGopls?: () => void | Promise<void>
   onRestartGopls?: () => void | Promise<void>
@@ -81,10 +84,28 @@ const ENGLISH: Record<string, string> = {
   '没有匹配的设置': 'No matching settings', '尝试搜索“插件”“字体”或“Go”': 'Try “plugins”, “font”, or “Go”',
   '应用': 'Apply', '确定': 'OK', '未应用的更改': 'Unapplied changes',
   'Go 工具链': 'Go toolchain', '保存时格式化 Go 文件': 'Format Go files on save',
+  '工具链版本、gopls 语言服务与代码辅助': 'Toolchain versions, gopls language service, and code assistance',
+  '安装': 'Install', '升级到最新版': 'Update to latest', '重启': 'Restart',
+  'gopls 状态': 'gopls status', 'gopls 启动中': 'gopls starting',
+  'gopls 未安装': 'gopls not installed', 'gopls 错误': 'gopls error', '空闲': 'Idle',
+  '主题': 'Theme', '深色或浅色界面，可跟随系统': 'Choose a light or dark theme, or follow the system',
+  '深色': 'Dark', '浅色': 'Light', '跟随系统': 'Follow system',
+  '调整代码阅读和输入方式。修改会立即生效。': 'Adjust code reading and editing. Changes apply immediately.',
+  '保存时格式化 Go 代码': 'Format Go code on save',
+  '保存前交给 gopls gofmt，并套用 EditorConfig 规则': 'Run gopls gofmt and apply EditorConfig rules before saving',
+  '运行与测试行为，运行配置在顶栏的配置菜单中编辑': 'Run and test behavior. Edit run configurations from the toolbar menu.',
+  '运行前保存所有文件': 'Save all files before running',
+  '启动 go run / go test 前自动保存未保存的修改': 'Save unsaved changes before starting go run or go test',
+  '已保存的运行配置': 'Saved run configurations',
+  '{count} 个配置。通过顶栏运行配置菜单 → 编辑运行配置…管理': '{count} configurations. Manage them through Run Configurations → Edit Run Configurations…',
   '使用 gopls 格式化后再写入磁盘；gopls 不可用时仍会保存原文。': 'Format with gopls before writing to disk. Saving still works when gopls is unavailable.',
   '已就绪': 'Ready', '启动中': 'Starting', '未安装': 'Not installed', '未连接': 'Not connected', '启动失败': 'Failed to start',
   '安装 gopls': 'Install gopls', '重启 gopls': 'Restart gopls',
   'Go 版本': 'Go version', '语言服务': 'Language server', '未检测到 Go 工具链': 'Go toolchain not found',
+  '当前窗口的 Go 版本': 'Go version for this window',
+  '输入完整版本号；首次使用时 Go 会自动下载并校验。': 'Enter a full release number. Go downloads and verifies it on first use.',
+  '使用此版本': 'Use this version', '使用系统默认': 'Use system default',
+  '正在下载或检查 Go 版本…': 'Downloading or checking the Go version…',
   '安装 Go 后重启 GoMavo，才能使用运行、测试和语言服务。': 'Install Go and restart GoMavo to use run, test, and language services.',
   '使用本机 Go 工具链与 gopls；此处显示当前检测结果。': 'Uses your local Go toolchain and gopls. Current detection is shown here.',
   '项目结构': 'Project Structure', '外观与行为': 'Appearance & Behavior', '按键映射': 'Keymap',
@@ -194,9 +215,10 @@ function NumberSetting({ id, label, description, value, min, max, unit, onChange
   </div>
 }
 
-export function SettingsPane({ preferences, onChange, onClose, initialSection, locale, onLocaleChange, versions, lspState, onInstallGopls, onRestartGopls, goToolBusy, onInstallTool, pluginManager, goScope, onGoScopeChange, hasProject, projectScopeAvailable, projectOverrideCount, onClearProjectGoOverrides, onOpenStyleFile }: SettingsPaneProps) {
+export function SettingsPane({ preferences, onChange, onClose, initialSection, locale, onLocaleChange, versions, selectedGoToolchain, onGoToolchainChange, goToolchainBusy, lspState, onInstallGopls, onRestartGopls, goToolBusy, onInstallTool, pluginManager, goScope, onGoScopeChange, hasProject, projectScopeAvailable, projectOverrideCount, onClearProjectGoOverrides, onOpenStyleFile }: SettingsPaneProps) {
   const [section, setSection] = useState<Section>(initialSection ?? 'editor')
   const [styleTab, setStyleTab] = useState<StyleTab>('indent')
+  const [goVersionDraft, setGoVersionDraft] = useState(selectedGoToolchain ?? '')
   const [recording, setRecording] = useState<ShortcutAction | null>(null)
   const [conflict, setConflict] = useState<Conflict | null>(null)
   const [shiftArmed, setShiftArmed] = useState(false)
@@ -328,6 +350,16 @@ export function SettingsPane({ preferences, onChange, onClose, initialSection, l
         <main className="mg-settings-content">
           {section === 'go' && <>
             <div className="mg-settings-section-heading"><h3>{t('Go 工具链')}</h3><p>{t('工具链版本、gopls 语言服务与代码辅助')}</p></div>
+            <div className="mg-settings-field mg-settings-go-version">
+              <div><label htmlFor="mg-go-version">{t('当前窗口的 Go 版本')}</label><span>{t('输入完整版本号；首次使用时 Go 会自动下载并校验。')}</span></div>
+              <div className="mg-settings-go-version-actions">
+                <input id="mg-go-version" type="text" list="mg-go-versions" value={goVersionDraft} placeholder="go1.26.3" spellCheck={false} autoCapitalize="off" disabled={goToolchainBusy} onChange={(event) => setGoVersionDraft(event.target.value.trim())} onKeyDown={(event) => { if (event.key === 'Enter' && goVersionDraft && !goToolchainBusy) { event.preventDefault(); void onGoToolchainChange?.(goVersionDraft).catch(() => undefined) } }} />
+                <datalist id="mg-go-versions">{selectedGoToolchain && <option value={selectedGoToolchain} />}{versions?.go?.match(/\bgo1\.\d+\.\d+\b/) && <option value={versions.go.match(/\bgo1\.\d+\.\d+\b/)![0]} />}</datalist>
+                <button type="button" className="mg-settings-action-button" disabled={!goVersionDraft || goToolchainBusy || goVersionDraft === selectedGoToolchain} onClick={() => void onGoToolchainChange?.(goVersionDraft).catch(() => undefined)}>{t('使用此版本')}</button>
+                <button type="button" className="mg-settings-action-button" disabled={!selectedGoToolchain || goToolchainBusy} onClick={() => { void onGoToolchainChange?.(null).then(() => setGoVersionDraft('')).catch(() => undefined) }}>{t('使用系统默认')}</button>
+              </div>
+            </div>
+            {goToolchainBusy && <p className="mg-settings-shortcut-hint" role="status">{t('正在下载或检查 Go 版本…')}</p>}
             <div className="mg-settings-tools">
               {([['go', 'Go', versions?.go], ['gopls', 'gopls', versions?.gopls], ['git', 'Git', versions?.git], ['dlv', 'Delve (dlv)', versions?.dlv], ['govulncheck', 'govulncheck', versions?.govulncheck]] as [string, string, string | null | undefined][]).map(([id, label, value]) => <div className="mg-settings-field mg-settings-tool-row" key={id}>
                 <div><strong>{label}</strong><span>{value ?? t('未安装')}</span></div>

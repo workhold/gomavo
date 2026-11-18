@@ -29,6 +29,7 @@ pub(crate) struct RecentProject {
 
 static MENU_LOCALE: OnceLock<Mutex<String>> = OnceLock::new();
 static RECENT_PROJECTS: OnceLock<Mutex<Vec<RecentProject>>> = OnceLock::new();
+static MENU_REBUILD: OnceLock<Mutex<()>> = OnceLock::new();
 
 fn menu_locale() -> &'static Mutex<String> {
     MENU_LOCALE.get_or_init(|| Mutex::new("en-US".to_string()))
@@ -404,6 +405,18 @@ pub(crate) fn create_go_project(
     parent: String,
     name: String,
     module: Option<String>,
+    window: WebviewWindow,
+    state: State<'_, AppState>,
+) -> BackendResult<String> {
+    let state = state.for_window(&window)?;
+    create_go_project_with_state(parent, name, module, &state)
+}
+
+fn create_go_project_with_state(
+    parent: String,
+    name: String,
+    module: Option<String>,
+    state: &AppState,
 ) -> BackendResult<String> {
     if !valid_project_name(&name) {
         return Err("Project name must be one safe directory name".to_string());
@@ -412,8 +425,9 @@ pub(crate) fn create_go_project(
     let parent = canonical_directory(&parent)?;
     let target = parent.join(&name);
     fs::create_dir(&target).map_err(|e| format!("Could not create project directory: {e}"))?;
-    let result = crate::process::command_for("go")
-        .arg("mod")
+    let mut command = crate::process::command_for("go");
+    crate::process::apply_go_toolchain(&mut command, state)?;
+    let result = command.arg("mod")
         .arg("init")
         .arg(&module)
         .current_dir(&target)
@@ -504,6 +518,10 @@ struct MenuActionPayload {
 /// locale and the stored recent-projects list. Accelerators are only set for
 /// keys the webview does not already own through the shortcut preferences.
 fn rebuild_app_menu(app: &AppHandle) -> tauri::Result<()> {
+    // Multiple webview windows can update the app-wide menu at the same time.
+    // Cocoa menu replacement must finish before another rebuild starts.
+    let _rebuild = lock(MENU_REBUILD.get_or_init(|| Mutex::new(())))
+        .map_err(std::io::Error::other)?;
     let locale = lock(menu_locale()).map_err(std::io::Error::other)?.clone();
     let recents = lock(recent_projects()).map_err(std::io::Error::other)?.clone();
     let zh = locale.starts_with("zh");
@@ -708,17 +726,23 @@ fn rebuild_app_menu(app: &AppHandle) -> tauri::Result<()> {
 
 #[tauri::command]
 pub(crate) fn set_menu_locale(app: AppHandle, locale: String) -> BackendResult<()> {
-    if let Ok(mut current) = lock(menu_locale()) {
-        *current = locale;
-    }
+    let changed = {
+        let mut current = lock(menu_locale())?;
+        if *current == locale { false } else { *current = locale; true }
+    };
+    if !changed { return Ok(()); }
     rebuild_app_menu(&app).map_err(|error| error.to_string())
 }
 
 #[tauri::command]
 pub(crate) fn set_recent_projects(app: AppHandle, projects: Vec<RecentProject>) -> BackendResult<()> {
-    if let Ok(mut current) = lock(recent_projects()) {
-        *current = projects;
-    }
+    let changed = {
+        let mut current = lock(recent_projects())?;
+        if current.len() == projects.len() && current.iter().zip(&projects).all(|(old, new)|
+            old.name == new.name && old.path == new.path && old.branch == new.branch
+        ) { false } else { *current = projects; true }
+    };
+    if !changed { return Ok(()); }
     rebuild_app_menu(&app).map_err(|error| error.to_string())
 }
 
@@ -790,15 +814,16 @@ mod tests {
         let parent = env::temp_dir().join(format!("gomavo-project-create-{nonce}"));
         fs::create_dir(&parent).unwrap();
         let parent_string = parent.to_string_lossy().into_owned();
-        let project = create_go_project(
+        let project = create_go_project_with_state(
             parent_string.clone(),
             "demo".to_string(),
             Some("example.com/demo".to_string()),
+            &AppState::default(),
         )
         .unwrap();
         let go_mod = fs::read_to_string(Path::new(&project).join("go.mod")).unwrap();
         assert!(go_mod.starts_with("module example.com/demo\n"));
-        assert!(create_go_project(parent_string, "demo".to_string(), None).is_err());
+        assert!(create_go_project_with_state(parent_string, "demo".to_string(), None, &AppState::default()).is_err());
         assert_eq!(
             fs::read_to_string(Path::new(&project).join("go.mod")).unwrap(),
             go_mod

@@ -18,12 +18,14 @@ jobs:
           - platform: windows-latest
             args: ''
     runs-on: ${{ matrix.platform }}
+    env:
+      MACOS_SIGNING_CONFIGURED: ${{ secrets.APPLE_CERTIFICATE != '' && secrets.APPLE_CERTIFICATE_PASSWORD != '' && secrets.APPLE_ID != '' && secrets.APPLE_PASSWORD != '' && secrets.APPLE_TEAM_ID != '' }}
     steps:
       - uses: actions/checkout@v4
 
       - uses: pnpm/action-setup@v4
         with:
-          version: 9
+          version: 11.25.0
 
       - uses: actions/setup-node@v4
         with:
@@ -45,6 +47,71 @@ jobs:
       - name: Install frontend dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Check optional macOS signing credentials
+        if: runner.os == 'macOS'
+        shell: bash
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          configured=0
+          for name in APPLE_CERTIFICATE APPLE_CERTIFICATE_PASSWORD APPLE_ID APPLE_PASSWORD APPLE_TEAM_ID; do
+            if [ -n "${!name:-}" ]; then
+              configured=$((configured + 1))
+            fi
+          done
+          if [ "$configured" -ne 0 ] && [ "$configured" -ne 5 ]; then
+            echo 'Apple signing secrets are partially configured; provide all five or remove all five.' >&2
+            exit 1
+          fi
+          if [ "$configured" -eq 0 ]; then
+            echo '::warning::Publishing an unsigned, unnotarized macOS preview build.'
+          else
+            printf 'APPLE_ID=%s\nAPPLE_PASSWORD=%s\nAPPLE_TEAM_ID=%s\n' \
+              "$APPLE_ID" "$APPLE_PASSWORD" "$APPLE_TEAM_ID" >> "$GITHUB_ENV"
+          fi
+
+      - name: Sign bundled macOS tools
+        if: runner.os == 'macOS' && env.MACOS_SIGNING_CONFIGURED == 'true'
+        shell: bash
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+        run: |
+          keychain="$RUNNER_TEMP/gomavo-signing.keychain"
+          certificate="$RUNNER_TEMP/gomavo-signing.p12"
+          keychain_password=$(openssl rand -hex 24)
+          printf '%s' "$APPLE_CERTIFICATE" | base64 -D > "$certificate"
+          security create-keychain -p "$keychain_password" "$keychain"
+          security default-keychain -s "$keychain"
+          security unlock-keychain -p "$keychain_password" "$keychain"
+          security set-keychain-settings -t 3600 -u "$keychain"
+          security import "$certificate" -k "$keychain" -P "$APPLE_CERTIFICATE_PASSWORD" -T /usr/bin/codesign
+          rm -f "$certificate"
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$keychain_password" "$keychain"
+          identity=$(security find-identity -v -p codesigning "$keychain" | awk -F '"' '/Developer ID Application:/ { print $2 }')
+          if [ -z "$identity" ] || [ "$(printf '%s\n' "$identity" | wc -l | tr -d ' ')" != 1 ]; then
+            echo 'Expected exactly one Developer ID Application identity in APPLE_CERTIFICATE.' >&2
+            exit 1
+          fi
+          echo "APPLE_SIGNING_IDENTITY=$identity" >> "$GITHUB_ENV"
+          pnpm prepare:dlv
+          pnpm prepare:gopls
+          for tool in src-tauri/binaries/dlv src-tauri/binaries/gopls; do
+            codesign --force --timestamp --options runtime --sign "$identity" "$tool"
+            codesign --verify --strict --verbose=2 "$tool"
+          done
+
+      - name: Remove cached bundle outputs
+        shell: bash
+        run: |
+          if [ -d src-tauri/target ]; then
+            find src-tauri/target -type d -name bundle -prune -exec rm -rf {} +
+          fi
+
       - name: Build and upload to release
         uses: tauri-apps/tauri-action@v0
         env:
@@ -52,7 +119,62 @@ jobs:
         with:
           tagName: ${{ github.ref_name }}
           releaseName: 'GoMavo ${{ github.ref_name }}'
-          releaseBody: 'GoMavo is the new name for MG Land. Existing settings and project code style are migrated automatically, and older native plugin packages remain importable. Download the installer for your platform: .dmg for macOS (Apple Silicon & Intel), .msi / -setup.exe for Windows. Running the app requires a Go toolchain and Git on the machine.'
-          releaseDraft: false
+          releaseBody: |
+            GoMavo ${{ github.ref_name }} fixes macOS Chinese input: Pinyin composition stays on the code line and keeps the syntax color of comments and strings.
+
+            This release also adds a per-window Go toolchain selector, automatic gopls recovery, and side-by-side diffs in Git and local history. It improves editor state handling, settings, and project windows. Existing settings, project code style, and older native plugin packages remain compatible.
+
+            macOS upgrade: remove the old `/Applications/MG Land.app` before copying `GoMavo.app` from the DMG into Applications. The two apps have the same bundle identifier to preserve existing settings, so leaving the old app installed can make macOS launch or display MG Land.
+
+            Download the installer for your platform: .dmg for macOS (Apple Silicon & Intel), .msi / -setup.exe for Windows. Running the app requires a Go toolchain and Git on the machine.
+
+            macOS signing: ${{ env.MACOS_SIGNING_CONFIGURED == 'true' && 'Developer ID signed and Apple notarized.' || 'Unsigned preview build; macOS may require manual approval in System Settings > Privacy & Security.' }}
+          releaseDraft: true
           prerelease: false
           args: ${{ matrix.args }}
+
+      - name: Verify GoMavo bundle identity
+        shell: bash
+        run: |
+          if [ "$RUNNER_OS" = macOS ]; then
+            app=$(find src-tauri/target -type d -path '*/bundle/macos/GoMavo.app' -print -quit)
+            test -n "$app"
+            plist="$app/Contents/Info.plist"
+            test "$(plutil -extract CFBundleDisplayName raw -o - "$plist")" = GoMavo
+            test "$(plutil -extract CFBundleName raw -o - "$plist")" = GoMavo
+            test -x "$app/Contents/MacOS/gomavo"
+          else
+            test -n "$(find src-tauri/target -type f \( -name 'GoMavo_*setup.exe' -o -name 'GoMavo_*.msi' \) -print -quit)"
+          fi
+          if find src-tauri/target -path '*/bundle/*' \( -iname '*MG Land*' -o -iname '*mgland*' \) | grep -q .; then
+            echo 'An obsolete MG Land bundle was produced.' >&2
+            exit 1
+          fi
+
+      - name: Verify macOS Developer ID and notarization
+        if: runner.os == 'macOS' && env.MACOS_SIGNING_CONFIGURED == 'true'
+        shell: bash
+        run: |
+          app=$(find src-tauri/target -type d -path '*/bundle/macos/GoMavo.app' -print -quit)
+          dmg=$(find src-tauri/target -type f -path '*/bundle/dmg/*.dmg' -print -quit)
+          test -n "$app" && test -n "$dmg"
+          codesign --verify --deep --strict --verbose=2 "$app"
+          codesign -dv --verbose=2 "$app" 2>&1 | grep -q '^Authority=Developer ID Application:'
+          for tool in "$app/Contents/Resources/binaries/dlv" "$app/Contents/Resources/binaries/gopls"; do
+            codesign --verify --strict --verbose=2 "$tool"
+            codesign -dv --verbose=2 "$tool" 2>&1 | grep -q '^Authority=Developer ID Application:'
+          done
+          xcrun stapler validate "$app"
+          spctl --assess --type execute --verbose=2 "$app"
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Publish built installers
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: gh release edit "${{ github.ref_name }}" --draft=false

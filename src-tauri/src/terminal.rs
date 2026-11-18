@@ -63,6 +63,9 @@ pub(crate) fn terminal_start(
     command.cwd(root);
     command.env("TERM", "xterm-256color");
     command.env("PATH", augmented_path());
+    if let Some(version) = crate::process::go_toolchain(&state)? {
+        command.env("GOTOOLCHAIN", version);
+    }
     let mut child = pair
         .slave
         .spawn_command(command)

@@ -55,7 +55,9 @@ pub(crate) fn debug_start(
 
     // An explicit binary path skips PATH lookup, but dlv still shells out to
     // `go` when building the debug target, so keep the augmented PATH.
-    let mut child = std::process::Command::new(&dlv_path)
+    let mut command = std::process::Command::new(&dlv_path);
+    crate::process::apply_go_toolchain(&mut command, &state)?;
+    let mut child = command
         .args(["dap", "--listen=127.0.0.1:0"])
         .env("PATH", crate::process::augmented_path())
         .current_dir(&root)

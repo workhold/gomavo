@@ -34,6 +34,7 @@ export function installModifierNavigation(options: ModifierNavigationOptions): M
   const cache = new Map<string, DefinitionTarget | null>()
   let lastPointer: { x: number; y: number } | null = null
   let activeKey: string | null = null
+  let linkShown = false
   let request = 0
 
   const wordAt = (x: number, y: number): WordTarget | null => {
@@ -58,7 +59,10 @@ export function installModifierNavigation(options: ModifierNavigationOptions): M
   const clear = () => {
     request += 1
     activeKey = null
-    decoration.clear()
+    if (linkShown) {
+      decoration.clear()
+      linkShown = false
+    }
   }
 
   const showAt = (x: number, y: number) => {
@@ -83,6 +87,7 @@ export function installModifierNavigation(options: ModifierNavigationOptions): M
           hoverMessage: { value: linkHint(atDeclaration) },
         },
       }])
+      linkShown = true
     }
     if (cache.has(key)) { showLink(cache.get(key) ?? null); return }
     void client.goToDefinition(word.path, word.line, word.column).then((target) => {

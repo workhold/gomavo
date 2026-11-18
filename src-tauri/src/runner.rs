@@ -499,6 +499,7 @@ pub(crate) fn run_go_task(
         return Err("govulncheck is not installed. Use Install govulncheck first.".to_string());
     }
     let mut command = command_for(plan.program);
+    crate::process::apply_go_toolchain(&mut command, &state)?;
     command
         .current_dir(&root)
         .args(&plan.args)

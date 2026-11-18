@@ -43,6 +43,7 @@ import 'monaco-editor/languages/definitions/hcl/register'
 import { loader } from '@monaco-editor/react'
 import EditorWorker from 'monaco-editor/editor/editor.worker?worker'
 import App from './App'
+import { AppErrorBoundary } from './components/AppErrorBoundary'
 import { migrateLegacyLocalStorage } from './lib/legacyStorage'
 import { installGoSyntaxFallback } from './lib/goHighlight'
 import { installProjectFileHighlight } from './lib/projectFileHighlight'
@@ -74,4 +75,4 @@ self.MonacoEnvironment = {
 }
 loader.config({ monaco })
 
-ReactDOM.createRoot(document.getElementById('root')!).render(<App />)
+ReactDOM.createRoot(document.getElementById('root')!).render(<AppErrorBoundary><App /></AppErrorBoundary>)

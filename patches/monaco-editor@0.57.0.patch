@@ -1,0 +1,34 @@
+diff --git a/esm/vs/editor/browser/controller/editContext/textArea/textAreaEditContext.js b/esm/vs/editor/browser/controller/editContext/textArea/textAreaEditContext.js
+index 6410fd4e134c6a9292d8ae8435abdb8ab692e71d..31de08c5c316c4486d1ce4faa279de6eb23f78fe 100644
+--- a/esm/vs/editor/browser/controller/editContext/textArea/textAreaEditContext.js
++++ b/esm/vs/editor/browser/controller/editContext/textArea/textAreaEditContext.js
+@@ -144,8 +144,10 @@ let TextAreaEditContext = class TextAreaEditContext extends AbstractEditContext
+         const textAreaInputHost = {
+             context: this._context,
+             getScreenReaderContent: () => {
+-                if (this._accessibilitySupport === 1 /* AccessibilitySupport.Disabled */) {
+-                    // We know for a fact that a screen reader is not attached
++                if (this._accessibilitySupport !== 2 /* AccessibilitySupport.Enabled */) {
++                    // Keep the textarea content short until a screen reader is attached.
++                    // A multi-line textarea lets WebKit scroll the IME overlay between
++                    // composition updates, causing the composed text to jump vertically.
+                     // On OSX, we write the character before the cursor to allow for "long-press" composition
+                     // Also on OSX, we write the word before the cursor to allow for the Accessibility Keyboard to give good hints
+                     const selection = this._selections[0];
+@@ -586,10 +588,12 @@ let TextAreaEditContext = class TextAreaEditContext extends AbstractEditContext
+                 const lineHeight = this._context.viewLayout.getLineHeightForLineNumber(startPosition.lineNumber);
+                 const fontSize = this._context.viewModel.getFontSizeAtPosition(this._primaryCursorPosition);
+                 const viewLineData = this._context.viewModel.getViewLineData(startPosition.lineNumber);
+-                const startTokenIndex = viewLineData.tokens.findTokenIndexAtOffset(startPosition.column - 1);
+-                const endTokenIndex = viewLineData.tokens.findTokenIndexAtOffset(endPosition.column - 1);
+-                const textareaSpansSingleToken = (startTokenIndex === endTokenIndex);
+-                const presentation = this._visibleTextArea.definePresentation((textareaSpansSingleToken ? viewLineData.tokens.getPresentation(startTokenIndex) : null));
++                // The visible textarea can include tokens before and after the composition.
++                // Use the token under the composing caret so comments and strings keep their
++                // color instead of falling back to the editor's default foreground.
++                const caretOffset = Math.min(endPosition.column - 1, Math.max(startPosition.column - 1, this._primaryCursorPosition.column - 2));
++                const caretTokenIndex = viewLineData.tokens.findTokenIndexAtOffset(caretOffset);
++                const presentation = this._visibleTextArea.definePresentation(viewLineData.tokens.getPresentation(caretTokenIndex));
+                 this.textArea.domNode.scrollTop = lineCount * lineHeight;
+                 this.textArea.domNode.scrollLeft = scrollLeft;
+                 this._doRender({

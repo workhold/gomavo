@@ -3,7 +3,7 @@ import type { RefObject } from 'react'
 import { listen, type UnlistenFn } from '@tauri-apps/api/event'
 import { getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow'
 import type * as Monaco from 'monaco-editor'
-import { desktopAvailable, errorMessage } from '../../lib/api'
+import { command, desktopAvailable, errorMessage } from '../../lib/api'
 import { GoplsClient, type DiagnosticEntry, type WorkspaceEditCallback } from '../../lib/lsp'
 import type { LspState, OpenFile } from '../types'
 import type { EditorNavigationLocation } from '../types'
@@ -47,6 +47,8 @@ export function useLsp(params: UseLspParams) {
   const [lspError, setLspError] = useState<string | null>(null)
   const [goplsLog, setGoplsLog] = useState<string[]>([])
   const [diagnostics, setDiagnostics] = useState<DiagnosticEntry[]>([])
+  const [retryEpoch, setRetryEpoch] = useState(0)
+  const retryCountRef = useRef(0)
   const lspRef = useRef<GoplsClient | null>(null)
 
   // gopls stderr carries the real failure reasons (toolchain mismatch, module
@@ -58,17 +60,17 @@ export function useLsp(params: UseLspParams) {
     const target = getCurrentWebviewWindow().label
     void Promise.all([
       listen<{ root: string; line: string }>('lsp-stderr', (event) => {
-        if (!event.payload.root.startsWith(root)) return
+        if (event.payload.root !== root) return
         setGoplsLog((current) => [...current, event.payload.line].slice(-60))
       }, { target }),
       listen<{ root: string; error: string }>('lsp-error', (event) => {
-        if (!event.payload.root.startsWith(root)) return
+        if (event.payload.root !== root) return
         setLspState('error')
         setLspError(event.payload.error)
       }, { target }),
       listen<{ root: string }>('lsp-exit', (event) => {
-        if (!event.payload.root.startsWith(root)) return
-        setLspState((current) => current === 'error' ? current : current === 'ready' ? 'error' : 'idle')
+        if (event.payload.root !== root) return
+        setLspState((current) => current === 'ready' ? 'error' : current)
       }, { target }),
     ]).then((listeners) => {
       if (disposed) listeners.forEach((stop) => stop())
@@ -110,7 +112,27 @@ export function useLsp(params: UseLspParams) {
       }
     })
     return () => { cancelled = true; if (lspRef.current === client) lspRef.current = null; void client.stop() }
-  }, [root, monacoApi, goplsAvailable, lspEpoch, navigateTo, captureEditorLocation, workspaceEditsRef])
+  }, [root, monacoApi, goplsAvailable, lspEpoch, retryEpoch, navigateTo, captureEditorLocation, workspaceEditsRef])
+
+  // Restart crashed or failed servers with bounded backoff. A successful
+  // minute resets the delay, so a one-off crash recovers quickly again.
+  useEffect(() => {
+    if (!root || !goplsAvailable || lspState !== 'error') return
+    const attempt = retryCountRef.current++
+    const timer = window.setTimeout(() => setRetryEpoch((value) => value + 1), Math.min(30000, 1000 * 2 ** Math.min(attempt, 5)))
+    return () => window.clearTimeout(timer)
+  }, [root, goplsAvailable, lspState])
+
+  useEffect(() => {
+    if (!root || lspState !== 'ready') return
+    const reset = window.setTimeout(() => { retryCountRef.current = 0 }, 60000)
+    const check = window.setInterval(() => {
+      void command<boolean>('lsp_health', { root }).then((healthy) => {
+        if (!healthy) { setLspError('gopls stopped'); setLspState('error') }
+      }).catch(() => undefined)
+    }, 20000)
+    return () => { window.clearTimeout(reset); window.clearInterval(check) }
+  }, [root, lspState])
 
   useEffect(() => {
     if (root && goplsAvailable === undefined) return

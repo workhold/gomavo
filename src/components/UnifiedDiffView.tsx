@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import * as monaco from 'monaco-editor/editor/editor.api'
 import { fileLanguage } from '../lib/api'
-import { parseUnifiedDiff, type DiffLine } from '../lib/unifiedDiff'
+import { parseUnifiedDiff, sideBySideRows, type DiffLine, type SideBySideRow } from '../lib/unifiedDiff'
 import './UnifiedDiffView.css'
 
 type Props = {
@@ -127,9 +127,31 @@ function DiffRow({ line, language, tokenizationVersion }: { line: DiffLine; lang
   </div>
 }
 
+function SideCell({ line, language, tokenizationVersion }: { line: DiffLine | null; language: string; tokenizationVersion: number }) {
+  const source = line?.text.slice(1) ?? ''
+  const fragments = useMemo(() => syntaxFragments(source, language), [source, language, tokenizationVersion])
+  return <div className={`side-diff-cell ${line?.kind ?? 'blank'}`}>
+    <span className="unified-diff-gutter" aria-hidden="true">{line?.kind === 'addition' ? line.newLine : line?.oldLine ?? ''}</span>
+    <span className="unified-diff-code">{fragments.map((fragment, index) => <span className={fragment.kind ? `unified-diff-token ${fragment.kind}` : undefined} key={index}>{fragment.text}</span>)}</span>
+  </div>
+}
+
+function SideRow({ row, language, tokenizationVersion }: { row: SideBySideRow; language: string; tokenizationVersion: number }) {
+  return row.kind === 'header'
+    ? <div className={`side-diff-header ${row.line.kind}`}>{row.line.text || ' '}</div>
+    : <div className="side-diff-row"><SideCell line={row.old} language={language} tokenizationVersion={tokenizationVersion} /><SideCell line={row.next} language={language} tokenizationVersion={tokenizationVersion} /></div>
+}
+
+const VIEW_KEY = 'gomavo.diffView'
+function savedMode(): 'unified' | 'side' {
+  try { return localStorage.getItem(VIEW_KEY) === 'side' ? 'side' : 'unified' } catch { return 'unified' }
+}
+
 /** Scrollable, read-only unified diff shared by Git and local file history. */
 export function UnifiedDiffView({ diff, emptyMessage, ariaLabel, className, path, language }: Props) {
   const lines = useMemo(() => parseUnifiedDiff(diff), [diff])
+  const [mode, setMode] = useState<'unified' | 'side'>(savedMode)
+  const sideRows = useMemo(() => sideBySideRows(lines), [lines])
   const syntaxLanguage = useMemo(() => diffLanguage(path, language), [path, language])
   const [tokenizationVersion, setTokenizationVersion] = useState(0)
   const scrollRef = useRef<HTMLDivElement>(null)
@@ -165,27 +187,44 @@ export function UnifiedDiffView({ diff, emptyMessage, ariaLabel, className, path
     return () => { cancelled = true }
   }, [syntaxLanguage])
 
-  const virtual = lines.length > VIRTUALIZATION_THRESHOLD
+  const rowCount = mode === 'side' ? sideRows.length : lines.length
+  const virtual = rowCount > VIRTUALIZATION_THRESHOLD
   const start = virtual ? Math.max(0, Math.floor(scrollTop / ROW_HEIGHT) - OVERSCAN_ROWS) : 0
-  const end = virtual ? Math.min(lines.length, Math.ceil((scrollTop + viewportHeight) / ROW_HEIGHT) + OVERSCAN_ROWS) : lines.length
+  const end = virtual ? Math.min(rowCount, Math.ceil((scrollTop + viewportHeight) / ROW_HEIGHT) + OVERSCAN_ROWS) : rowCount
   const visibleLines = virtual ? lines.slice(start, end) : lines
+  const visibleSideRows = virtual ? sideRows.slice(start, end) : sideRows
 
   // Reserve horizontal space for the widest line even when that row is outside
   // the virtualized window, so horizontal scrolling does not jump on scroll.
   const maxColumns = useMemo(() => lines.reduce((width, line) => Math.max(width, line.text.replace(/\t/g, '    ').length), 0), [lines])
   const contentWidth = `max(100%, calc(84px + ${maxColumns}ch))`
 
-  return <div
+  const changeMode = (next: 'unified' | 'side') => {
+    setMode(next)
+    try { localStorage.setItem(VIEW_KEY, next) } catch { /* Keep the in-memory choice. */ }
+  }
+
+  return <div className={`diff-view-shell${className ? ` ${className}` : ''}`}>
+    <div className="diff-view-toolbar" role="group" aria-label="Diff layout">
+      <button type="button" className={mode === 'unified' ? 'selected' : ''} aria-pressed={mode === 'unified'} onClick={() => changeMode('unified')}>{document.documentElement.lang === 'zh-CN' ? '单列' : 'Unified'}</button>
+      <button type="button" className={mode === 'side' ? 'selected' : ''} aria-pressed={mode === 'side'} onClick={() => changeMode('side')}>{document.documentElement.lang === 'zh-CN' ? '两列对比' : 'Side by side'}</button>
+    </div>
+    <div
     ref={scrollRef}
-    className={`unified-diff-view${className ? ` ${className}` : ''}`}
+    className="unified-diff-view"
     role="region"
     aria-label={ariaLabel}
     onScroll={virtual ? (event) => setScrollTop(event.currentTarget.scrollTop) : undefined}
   >
-    {lines.length ? <div className="unified-diff-content" style={{ minWidth: contentWidth }}>
+    {lines.length ? mode === 'unified' ? <div className="unified-diff-content" style={{ minWidth: contentWidth }}>
       {virtual && <div aria-hidden="true" style={{ height: start * ROW_HEIGHT }} />}
       {visibleLines.map((line, index) => <DiffRow key={start + index} line={line} language={syntaxLanguage} tokenizationVersion={tokenizationVersion} />)}
       {virtual && <div aria-hidden="true" style={{ height: (lines.length - end) * ROW_HEIGHT }} />}
+    </div> : <div className="side-diff-content" style={{ minWidth: `max(100%, calc(92px + ${maxColumns * 2}ch))` }}>
+      {virtual && <div aria-hidden="true" style={{ height: start * ROW_HEIGHT }} />}
+      {visibleSideRows.map((row, index) => <SideRow key={start + index} row={row} language={syntaxLanguage} tokenizationVersion={tokenizationVersion} />)}
+      {virtual && <div aria-hidden="true" style={{ height: (sideRows.length - end) * ROW_HEIGHT }} />}
     </div> : <div className="unified-diff-empty">{emptyMessage ?? 'No text diff to display.'}</div>}
+    </div>
   </div>
 }

@@ -70,7 +70,9 @@ pub(crate) fn lsp_start(
     };
     // An explicit binary path skips PATH lookup, but gopls still shells out
     // to `go` for workspace queries, so keep the augmented PATH.
-    let mut child = std::process::Command::new(&gopls_path)
+    let mut command = std::process::Command::new(&gopls_path);
+    crate::process::apply_go_toolchain(&mut command, &state)?;
+    let mut child = command
         .arg("serve")
         .env("PATH", crate::process::augmented_path())
         .current_dir(&canonical)
@@ -152,6 +154,21 @@ pub(crate) fn lsp_start(
         }
     });
     Ok(())
+}
+
+#[tauri::command(async)]
+pub(crate) fn lsp_health(root: String, window: WebviewWindow, state: State<'_, AppState>) -> BackendResult<bool> {
+    let state = state.for_window(&window)?;
+    let root = checked_directory(&state, &root)?;
+    let mut sessions = lock(&state.core.lsp)?;
+    let Some(session) = sessions.get_mut(&root) else { return Ok(false) };
+    match session.child.try_wait().map_err(|e| e.to_string())? {
+        None => Ok(true),
+        Some(_) => {
+            sessions.remove(&root);
+            Ok(false)
+        }
+    }
 }
 
 #[tauri::command(async)]

@@ -1,3 +1,8 @@
+.diff-view-shell { display: flex; flex-direction: column; min-width: 0; min-height: 0; flex: 1; }
+.diff-view-toolbar { display: flex; gap: 2px; padding: 4px 10px; border-bottom: 1px solid var(--surface-active); background: var(--surface-panel); }
+.diff-view-toolbar button { border: 0; border-radius: 4px; background: transparent; color: var(--text-secondary); font: inherit; font-size: 11px; padding: 3px 9px; cursor: pointer; }
+.diff-view-toolbar button.selected { background: var(--surface-active); color: var(--text-primary); }
+.diff-view-toolbar button:focus-visible { outline: 2px solid #91b6fb; outline-offset: 1px; }
 .unified-diff-view {
   min-width: 0;
   min-height: 0;
@@ -54,3 +59,16 @@
 .unified-diff-row.deletion .unified-diff-gutter { color: #d79591; }
 .unified-diff-row.marker { color: var(--text-primary); font-style: italic; }
 .unified-diff-empty { padding: 12px 14px; color: var(--text-primary); }
+.side-diff-content { width: 100%; }
+.side-diff-row { display: grid; grid-template-columns: minmax(360px, 1fr) minmax(360px, 1fr); height: 20px; white-space: pre; }
+.side-diff-cell { display: grid; grid-template-columns: 46px minmax(0, 1fr); min-width: 0; }
+.side-diff-cell:first-child { border-right: 1px solid #3a4049; }
+.side-diff-cell.addition { background: #1d3529; }
+.side-diff-cell.deletion { background: #3b2729; }
+.side-diff-cell.blank { background: var(--surface-panel); }
+.side-diff-cell.context:hover { background: var(--surface-hover); }
+.side-diff-cell .unified-diff-code { overflow: hidden; text-overflow: clip; }
+.side-diff-header { height: 20px; padding: 0 12px; white-space: pre; }
+.side-diff-header.file { border-top: 1px solid #3a4049; background: var(--surface-hover); font-weight: 600; }
+.side-diff-header.hunk { background: #243449; color: #a9cef8; }
+.side-diff-header.marker { font-style: italic; }

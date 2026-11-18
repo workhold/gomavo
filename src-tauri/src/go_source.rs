@@ -7,12 +7,12 @@ use crate::paths::{candidate_path, workspace};
 use crate::process::command_for;
 use crate::state::{AppState, BackendResult};
 
-fn go_json(root: &Path, args: &[&str], file: Option<&Path>) -> BackendResult<Value> {
+fn go_json(root: &Path, args: &[&str], file: Option<&Path>, state: &AppState) -> BackendResult<Value> {
     let mut command = command_for("go");
+    crate::process::apply_go_toolchain(&mut command, state)?;
     command
         .current_dir(root)
         .env("GOPROXY", "off")
-        .env("GOTOOLCHAIN", "local")
         .args(args);
     if let Some(file) = file {
         command.arg(file);
@@ -61,13 +61,14 @@ fn add_local_replacements(config: &Value, base: &Path, roots: &mut Vec<PathBuf>)
     }
 }
 
-fn go_source_roots(workspace_root: &Path) -> BackendResult<Vec<PathBuf>> {
+fn go_source_roots(workspace_root: &Path, state: &AppState) -> BackendResult<Vec<PathBuf>> {
     // Go resolves GOMOD and GOWORK from the active project directory. Reading
     // their JSON through the Go tool avoids guessing where a replace/use points.
     let values = go_json(
         workspace_root,
         &["env", "-json", "GOROOT", "GOMODCACHE", "GOMOD", "GOWORK"],
         None,
+        state,
     )?;
     let mut roots = ["GOROOT", "GOMODCACHE"]
         .into_iter()
@@ -91,7 +92,7 @@ fn go_source_roots(workspace_root: &Path) -> BackendResult<Vec<PathBuf>> {
     {
         let go_work = candidate_path(workspace_root, go_work);
         if go_work.is_file() {
-            if let Ok(config) = go_json(workspace_root, &["work", "edit", "-json"], Some(&go_work))
+            if let Ok(config) = go_json(workspace_root, &["work", "edit", "-json"], Some(&go_work), state)
             {
                 if let Some(base) = go_work.parent() {
                     if let Some(uses) = config
@@ -120,7 +121,7 @@ fn go_source_roots(workspace_root: &Path) -> BackendResult<Vec<PathBuf>> {
     module_files.dedup();
     for go_mod in module_files {
         if let Some(base) = go_mod.parent() {
-            if let Ok(config) = go_json(workspace_root, &["mod", "edit", "-json"], Some(&go_mod)) {
+            if let Ok(config) = go_json(workspace_root, &["mod", "edit", "-json"], Some(&go_mod), state) {
                 if let Some(directory) = local_module_dir(base, ".") {
                     roots.push(directory);
                 }
@@ -166,7 +167,7 @@ pub(crate) fn read_go_source(
     state: State<'_, AppState>,
 ) -> BackendResult<String> {
     let state = state.for_window(&window)?;
-    let roots = go_source_roots(&workspace(&state)?)?;
+    let roots = go_source_roots(&workspace(&state)?, &state)?;
     fs::read_to_string(checked_go_source(Path::new(&path), &roots)?).map_err(|e| e.to_string())
 }
 
@@ -176,10 +177,10 @@ pub(crate) fn go_modules(window: WebviewWindow, state: State<'_, AppState>) -> B
     let state = state.for_window(&window)?;
     let root = workspace(&state)?;
     let mut command = command_for("go");
+    crate::process::apply_go_toolchain(&mut command, &state)?;
     command
         .current_dir(&root)
         .env("GOPROXY", "off")
-        .env("GOTOOLCHAIN", "local")
         .args(["list", "-m", "all"]);
     let output = command
         .output()
@@ -287,7 +288,7 @@ mod tests {
         .unwrap();
         fs::write(base.join("go.work"), "go 1.23\n\nuse ./project\nuse ./workspace-module\n\nreplace example.com/unused => ./work-replacement\n").unwrap();
 
-        let roots = go_source_roots(&project).unwrap();
+        let roots = go_source_roots(&project, &AppState::default()).unwrap();
         for directory in [&project, &replacement, &workspace_module, &work_replacement] {
             assert!(
                 checked_go_source(&directory.join("source.go"), &roots).is_ok(),

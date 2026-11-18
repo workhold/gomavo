@@ -32,6 +32,8 @@
 .mg-settings-dialog button:focus-visible,
 .mg-settings-dialog input:focus-visible,
 .mg-settings-dialog select:focus-visible { outline: 2px solid #8fb4ff; outline-offset: 2px; }
+.mg-settings-go-version-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; }
+.mg-settings-go-version-actions input { min-width: 145px; width: 145px; padding: 5px 8px; border: 1px solid var(--surface-active); border-radius: 5px; color: var(--text-primary); background: var(--surface-panel); }
 .mg-settings-dialog .mg-settings-number input:focus-visible,
 .mg-settings-dialog .mg-settings-select:focus-visible { border-color: #78a4ff; outline-color: #78a4ff; outline-offset: 1px; }
 

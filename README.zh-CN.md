@@ -20,7 +20,7 @@ GoMavo 是一个面向 macOS 的专注型 Go IDE：每个窗口打开一个项�
 - **真正的 Go 语言服务**——基于 `gopls` 的补全、悬停文档、诊断、语义高亮、跳转定义（Go SDK 与模块缓存以只读标签打开）和当前文件格式化。
 - **内置 Delve 调试器**——点击 gutter 或按 F9 切换断点，⌃D 调试光标所在的测试或包；调用栈、变量与调试控制台都在 Debug 工具窗口中。
 - **集成测试工作流**——`_test.go` 的 gutter 快速运行图标，⌃R 运行光标所在测试或整个文件，结果以用例树展示并支持单项重跑，附带测试覆盖率高亮（`go test -cover`）。
-- **Git 工具窗口**——分支切换、已暂存／未暂存改动与统一差异视图、提交、近期历史、文件历史与逐行 blame。
+- **Git 工具窗口**——分支切换、已暂存／未暂存改动与单列或两列差异视图、提交、近期历史、文件历史与逐行 blame。
 - **一切本地化**——PTY 集成终端、`go mod tidy/download`、`go vet`、`go fmt`、`.editorconfig` 支持与原生插件系统。界面支持中文与 English。
 
 <table>
@@ -40,9 +40,13 @@ GoMavo 是一个面向 macOS 的专注型 Go IDE：每个窗口打开一个项�
 
 ## 环境与启动
 
-从源码构建需要 Node.js、pnpm、Rust/Cargo 和 Go 工具链，桌面构建还需要满足当前操作系统的 Tauri 2 系统依赖；构建脚本会在打包前自动编译 `gopls` 与 `dlv`（Delve）并打入安装包。运行安装包只需本机装有 Go 工具链和 Git，请确认 `go version`、`git --version` 可用，`gopls` 无需单独安装。
+从源码构建需要 Node.js 22 或更新版本、pnpm 11.25.0、Rust/Cargo 和 Go 工具链，桌面构建还需要满足当前操作系统的 Tauri 2 系统依赖；构建脚本会在打包前自动编译 `gopls` 与 `dlv`（Delve）并打入安装包。运行安装包只需本机装有 Go 工具链和 Git，请确认 `go version`、`git --version` 可用，`gopls` 无需单独安装。
 
 应用优先使用安装包内置的 `gopls` 与 `dlv`，找不到时再从 `PATH`、`GOBIN`、`GOPATH/bin` 等位置查找。仍可打开项目后，通过右下角的状态栏安装或升级 `gopls`；此操作需要能够访问 Go 模块源。
+
+在 macOS 上从 MG Land 升级时，请先退出旧应用，从“应用程序”移除旧的 `MG Land.app`，再从 DMG 复制 `GoMavo.app`。如果启动台或 Dock 仍显示 MG Land，请移除旧图标并重新打开 `GoMavo.app`。为了保留原有应用数据，bundle identifier 仍是 `dev.mgland.ide`；同时保留两个应用包可能导致 macOS 启动旧版。
+
+「设置 → Go」可为每个窗口选择完整 Go 版本号，如 `go1.26.3`。缺失的版本会由 Go 在首次选择时自动下载和校验，随后该窗口的任务、新终端、调试与 `gopls` 都使用所选版本。选择在当前窗口会话内有效。GoMavo 每 20 秒巡检 `gopls`，启动失败或异常退出后会按退避间隔自动重试。
 
 ```bash
 pnpm install
@@ -50,6 +54,12 @@ pnpm tauri dev
 ```
 
 启动后点击左上角项目名称，可选择「新建窗口」「新建项目」或「打开项目」；macOS 的 File → New Window、File → New → Project、File → Open Project 也提供入口，Dock 图标右键菜单可新建窗口。新窗口会显示项目选择页，可在其中打开已有项目或新建 Go 项目，不会自动打开上一项目。新建项目会在所选父目录创建文件夹，并执行 `go mod init`。已有项目的窗口中再打开或新建项目时，会启动独立窗口；每个窗口保留自己的项目状态。应用启动时会恢复上次打开的目录。macOS 应用菜单中的 Settings… 或 ⌘, 可打开设置。制作桌面安装包运行 `pnpm tauri build`。`pnpm dev` 只预览浏览器界面；文件、Go 命令、Git、PTY 终端和 `gopls` 依赖 Tauri 桌面后端。
+
+### macOS 发布签名
+
+目前可以不配置 Apple 证书，标签发布仍会构建并发布 macOS 测试包。该包**未经 Developer ID 签名和 Apple 公证**，从网络下载后 macOS 可能提示“移到废纸篓”，需要用户在“系统设置 → 隐私与安全性”中手动放行。发布说明会标明未签名状态。
+
+准备正式分发时，再配置五个 GitHub Actions Secrets：`APPLE_CERTIFICATE`（包含证书和私钥的 `.p12` 文件经 base64 编码后的内容）、`APPLE_CERTIFICATE_PASSWORD`（`.p12` 导出密码）、`APPLE_ID`、`APPLE_PASSWORD`（Apple ID 的 App 专用密码）及 `APPLE_TEAM_ID`。公证需要付费 Apple Developer Program 会员资格。从“钥匙串访问”导出证书后，可运行 `openssl base64 -A -in DeveloperID.p12 -out DeveloperID.p12.b64`，将输出文件内容保存为 `APPLE_CERTIFICATE`；不要把证书或密码提交到仓库。五项凭据齐全时，工作流会签名内置的 `gopls`、`dlv` 和应用，并验证 Apple 公证票据。只配置部分凭据会让发布失败，以免误发未公证的安装包。旧版 DMG 不会自动获得公证，配置完成后需要发布新标签。
 
 ## 已实现的工作流
 
@@ -63,7 +73,7 @@ pnpm tauri dev
 | Git | Git 工具窗口展示分支、已暂存与未暂存状态；项目树与编辑器标签按文件状态着色。项目树文件和编辑器内右键可查看该文件的 Git 修改历史，点击提交可查看差异。也可查看当前文本差异、暂存/取消暂存、提交和近期提交，编辑器右键可按行查看 Git Blame。顶部可创建并切换本地分支。Git 功能需要本机 Git CLI 与打开的 Git 仓库目录。 |
 | 终端 | Terminal 工具窗口以 xterm.js 和本机 PTY 运行项目目录中的 Shell，支持交互输入、窗口调整和会话结束后重启。 |
 | 搜索与命令 | 双击 Shift 搜索文件和操作；另有 ⌘⇧O 转到文件、⌘⌥O 转到符号、⌘⇧F 在文件中查找、⌘E 最近文件。已启用的插件命令也出现在操作搜索中。 |
-| 书签与本地历史 | F3 切换当前行书签；本地编辑历史按会话记录修改，可逐条查看差异。 |
+| 书签与本地历史 | F3 切换当前行书签；本地编辑历史按会话记录修改，可逐条以单列或两列查看差异。 |
 | 插件 | 在「设置 → 插件」选择本地 `.gomavo-plugin` 安装包或 JSON 命令清单，可导入、启停和移除。原生插件可注册命令、Monaco 补全与悬停提示；JSON 清单只支持现有 Go 任务或打开项目内的相对路径文件。见下方的[原生插件说明](#gomavo-原生插件)和两个示例。当前没有在线插件市场。 |
 | 设置 | 顶部齿轮、⌘, 或 macOS 应用菜单的 Settings… 打开设置；左侧分组树与搜索用于定位现有选项，包括紧凑模式、编辑器字号/行高/Tab/缩略图/换行、项目树、Git 自动刷新、终端字号、界面语言、快捷键及插件管理。偏好保存在本机应用存储中。主界面可切换中文与 English；部分新面板仍使用中文。 |
 

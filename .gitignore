@@ -12,3 +12,4 @@ src-tauri/binaries/gopls
 src-tauri/binaries/*.exe
 .claude/
 .zcode/
+.specify/

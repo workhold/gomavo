@@ -3,6 +3,8 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use crate::dto::ToolVersions;
+use crate::state::{lock, AppState, BackendResult};
+use tauri::{State, WebviewWindow};
 
 pub(crate) fn augmented_path() -> std::ffi::OsString {
     let current = env::var_os("PATH").unwrap_or_default();
@@ -75,6 +77,44 @@ pub(crate) fn command_for(name: &str) -> Command {
     command
 }
 
+pub(crate) fn apply_go_toolchain(command: &mut Command, state: &AppState) -> BackendResult<()> {
+    if let Some(version) = lock(&state.core.go_toolchain)?.as_ref() {
+        command.env("GOTOOLCHAIN", version);
+    }
+    Ok(())
+}
+
+pub(crate) fn go_toolchain(state: &AppState) -> BackendResult<Option<String>> {
+    Ok(lock(&state.core.go_toolchain)?.clone())
+}
+
+#[tauri::command(async)]
+pub(crate) fn set_go_toolchain(
+    version: Option<String>,
+    window: WebviewWindow,
+    state: State<'_, AppState>,
+) -> BackendResult<String> {
+    let state = state.for_window(&window)?;
+    let version = version.filter(|value| !value.is_empty());
+    if let Some(value) = &version {
+        let valid = value.starts_with("go1.")
+            && value[4..].split('.').count() == 2
+            && value[4..].split('.').all(|part| !part.is_empty() && part.bytes().all(|byte| byte.is_ascii_digit()));
+        if !valid { return Err("Enter a full Go release such as go1.26.3".into()); }
+    }
+    // Go 1.21+ downloads and verifies a selected toolchain automatically.
+    // Resolve it before changing the window, so a failed download leaves the
+    // previous toolchain active.
+    let mut command = command_for("go");
+    if let Some(value) = &version { command.env("GOTOOLCHAIN", value); }
+    let output = command.arg("version").output().map_err(|e| e.to_string())?;
+    if !output.status.success() {
+        return Err(String::from_utf8_lossy(&output.stderr).trim().to_string());
+    }
+    *lock(&state.core.go_toolchain)? = version;
+    Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
+}
+
 pub(crate) fn version(program: &str, args: &[&str]) -> Option<String> {
     let output = command_for(program).args(args).output().ok()?;
     if !output.status.success() {
@@ -124,7 +164,8 @@ fn version_at(path: &Path, args: &[&str]) -> Option<String> {
 }
 
 #[tauri::command(async)]
-pub(crate) fn tool_versions(app: tauri::AppHandle) -> ToolVersions {
+pub(crate) fn tool_versions(app: tauri::AppHandle, window: WebviewWindow, state: State<'_, AppState>) -> ToolVersions {
+    let window_state = state.for_window(&window).ok();
     // Prefer app-bundled binaries so gopls and the debugger work out of the
     // box; a user-installed copy is the fallback when no bundle exists.
     let dlv_version = resolve_bundled(&app, "dlv")
@@ -134,10 +175,39 @@ pub(crate) fn tool_versions(app: tauri::AppHandle) -> ToolVersions {
         .and_then(|path| version_at(&path, &["version"]))
         .or_else(|| version("gopls", &["version"]));
     ToolVersions {
-        go: version("go", &["version"]),
+        go: window_state.as_ref().and_then(|state| {
+            let mut command = command_for("go");
+            apply_go_toolchain(&mut command, state).ok()?;
+            let output = command.arg("version").output().ok()?;
+            output.status.success().then(|| String::from_utf8_lossy(&output.stdout).trim().to_string())
+        }),
         gopls: gopls_version,
         git: version("git", &["--version"]),
         dlv: dlv_version,
         govulncheck: version("govulncheck", &["-version"]),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn selected_go_toolchains_are_isolated_by_window() {
+        let app = AppState::default();
+        let first = app.for_label("first").unwrap();
+        let second = app.for_label("second").unwrap();
+        *lock(&first.core.go_toolchain).unwrap() = Some("go1.25.4".into());
+        *lock(&second.core.go_toolchain).unwrap() = Some("go1.26.3".into());
+        let mut first_command = command_for("go");
+        let mut second_command = command_for("go");
+        apply_go_toolchain(&mut first_command, &first).unwrap();
+        apply_go_toolchain(&mut second_command, &second).unwrap();
+        let selected = |command: &Command| command.get_envs()
+            .find(|(name, _)| *name == "GOTOOLCHAIN")
+            .and_then(|(_, value)| value)
+            .map(|value| value.to_string_lossy().to_string());
+        assert_eq!(selected(&first_command).as_deref(), Some("go1.25.4"));
+        assert_eq!(selected(&second_command).as_deref(), Some("go1.26.3"));
     }
 }

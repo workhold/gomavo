@@ -187,6 +187,7 @@ function buildTestTree(results: TestResult[]): TestTreeNode[] {
 }
 
 function TestTreeNodes(props: {
+  t: BottomPanelProps['t']
   nodes: TestTreeNode[]
   packageName: string
   depth: number
@@ -195,7 +196,7 @@ function TestTreeNodes(props: {
   rerunTest: (packageName: string, testName: string) => Promise<void>
   onSelectCase: (packageName: string, fullName: string) => void
 }) {
-  const { nodes, packageName, depth, runningTask, jumpToTest, rerunTest, onSelectCase } = props
+  const { t, nodes, packageName, depth, runningTask, jumpToTest, rerunTest, onSelectCase } = props
   return <>{nodes.map((node) => {
     const children = [...node.children.values()]
     return <div key={node.fullName}>
@@ -204,9 +205,9 @@ function TestTreeNodes(props: {
         {node.status === 'fail' ? <X size={14} /> : node.status === 'pass' ? <Check size={14} /> : node.status === 'skip' ? <Square size={12} /> : <Play size={13} />}
         <button type="button" className="test-source-link" onClick={() => { onSelectCase(packageName, node.fullName); void jumpToTest(packageName, node.fullName) }} title={node.fullName}>{node.name}</button>
         {node.elapsed !== undefined && <small>{node.elapsed.toFixed(2)}s</small>}
-        <button type="button" className="test-rerun" title={`重跑 ${node.fullName}`} disabled={!!runningTask} onClick={() => void rerunTest(packageName, node.fullName)}><Play size={12} /></button>
+        <button type="button" className="test-rerun" title={t('重跑 {name}', { name: node.fullName })} disabled={!!runningTask} onClick={() => void rerunTest(packageName, node.fullName)}><Play size={12} /></button>
       </div>
-      {children.length ? <TestTreeNodes nodes={children} packageName={packageName} depth={depth + 1} runningTask={runningTask} jumpToTest={jumpToTest} rerunTest={rerunTest} onSelectCase={onSelectCase} /> : null}
+      {children.length ? <TestTreeNodes t={t} nodes={children} packageName={packageName} depth={depth + 1} runningTask={runningTask} jumpToTest={jumpToTest} rerunTest={rerunTest} onSelectCase={onSelectCase} /> : null}
     </div>
   })}</>
 }
@@ -392,8 +393,9 @@ export function BottomPanel(props: BottomPanelProps) {
               const packageStatus = results.find((result) => result.name === '(package)')?.status ?? (results.some((result) => result.status === 'fail') ? 'fail' : results.every((result) => result.status === 'pass') ? 'pass' : 'run')
               const tree = buildTestTree(results)
               return <div key={packageName}>
-                <div className={`test-tree-row package ${packageStatus === 'fail' ? 'failed' : packageStatus === 'pass' ? 'passed' : ''}`} title={packageName}><ChevronDown size={13} />{packageStatus === 'fail' ? <X size={14} /> : packageStatus === 'pass' ? <Check size={14} /> : <Play size={13} />}<span>{packageName.split('/').at(-1) || packageName}</span><button type="button" className="test-rerun" title={`重跑 ${packageName}`} disabled={!packageDirectory(packageName) || !!runningTask} onClick={() => { const directory = packageDirectory(packageName); if (directory) runSelection('test', { scope: 'package', targetPath: directory, label: `测试 ${packageName}` }) }}><Play size={12} /></button></div>
+                <div className={`test-tree-row package ${packageStatus === 'fail' ? 'failed' : packageStatus === 'pass' ? 'passed' : ''}`} title={packageName}><ChevronDown size={13} />{packageStatus === 'fail' ? <X size={14} /> : packageStatus === 'pass' ? <Check size={14} /> : <Play size={13} />}<span>{packageName.split('/').at(-1) || packageName}</span><button type="button" className="test-rerun" title={t('重跑 {name}', { name: packageName })} disabled={!packageDirectory(packageName) || !!runningTask} onClick={() => { const directory = packageDirectory(packageName); if (directory) runSelection('test', { scope: 'package', targetPath: directory, label: `go test ${packageName}` }) }}><Play size={12} /></button></div>
                 <TestTreeNodes
+                  t={t}
                   nodes={tree} packageName={packageName} depth={1} runningTask={runningTask}
                   jumpToTest={jumpToTest} rerunTest={rerunTest}
                   onSelectCase={(pkg, fullName) => setSelectedCase({ packageName: pkg, fullName })}

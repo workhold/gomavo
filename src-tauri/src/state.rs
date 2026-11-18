@@ -53,6 +53,8 @@ pub(crate) struct TaskSession {
 #[derive(Default)]
 pub(crate) struct Core {
     pub(crate) workspace: Mutex<Option<PathBuf>>,
+    /// Selected Go toolchain belongs to this window, not the process.
+    pub(crate) go_toolchain: Mutex<Option<String>>,
     pub(crate) terminals: Mutex<HashMap<String, TerminalSession>>,
     pub(crate) lsp: Mutex<HashMap<PathBuf, LspSession>>,
     pub(crate) tasks: Mutex<HashMap<String, TaskSession>>,

@@ -3,3 +3,6 @@ packages:
 
 allowBuilds:
   esbuild: true
+
+patchedDependencies:
+  monaco-editor@0.57.0: patches/monaco-editor@0.57.0.patch

@@ -7,6 +7,37 @@ export type DiffLine = {
   newLine: number | null
 }
 
+export type SideBySideRow =
+  | { kind: 'header'; line: DiffLine }
+  | { kind: 'content'; old: DiffLine | null; next: DiffLine | null }
+
+/** Align removed and added lines in each change block for a two-column diff. */
+export function sideBySideRows(lines: readonly DiffLine[]): SideBySideRow[] {
+  const rows: SideBySideRow[] = []
+  let removed: DiffLine[] = []
+  let added: DiffLine[] = []
+  let markers: DiffLine[] = []
+  const flush = () => {
+    for (let index = 0; index < Math.max(removed.length, added.length); index += 1) {
+      rows.push({ kind: 'content', old: removed[index] ?? null, next: added[index] ?? null })
+    }
+    removed = []
+    added = []
+    for (const marker of markers) rows.push({ kind: 'header', line: marker })
+    markers = []
+  }
+  for (const line of lines) {
+    if (line.kind === 'deletion') { removed.push(line); continue }
+    if (line.kind === 'addition') { added.push(line); continue }
+    if (line.kind === 'marker' && (removed.length || added.length)) { markers.push(line); continue }
+    flush()
+    if (line.kind === 'context') rows.push({ kind: 'content', old: line, next: line })
+    else rows.push({ kind: 'header', line })
+  }
+  flush()
+  return rows
+}
+
 /** Parse a unified patch without interpreting its file content as markup. */
 export function parseUnifiedDiff(diff: string): DiffLine[] {
   if (!diff) return []

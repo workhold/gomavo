@@ -1,16 +1,16 @@
 <!doctype html>
-<html lang="zh-CN">
+<html lang="en-US">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="theme-color" content="#15191f" />
-    <title>GoMavo · Go 开发环境</title>
+    <title>GoMavo · Go IDE</title>
     <link id="monaco-zh-cn" rel="alternate" href="/node_modules/monaco-editor/min/vs/nls/lang/zh-cn.js" />
     <script>
       // A parser-blocking script must run before Vite's module preloads evaluate Monaco.
-      let locale = 'zh-CN'
+      let locale = 'en-US'
       try {
-        if ((localStorage.getItem('gomavo.locale') ?? localStorage.getItem('mgland.locale')) === 'en-US') locale = 'en-US'
+        if ((localStorage.getItem('gomavo.locale') ?? localStorage.getItem('mgland.locale')) === 'zh-CN') locale = 'zh-CN'
       } catch {}
       document.documentElement.lang = locale
       if (locale === 'zh-CN') {
