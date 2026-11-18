@@ -6,7 +6,7 @@
 
 Tauri 2 · React 19 · Monaco Editor · `gopls` · Delve
 
-![编辑器](docs/images/editor.png)
+![编辑器](docs/images/editor.jpg)
 
 [English](README.md) | **简体中文**
 
@@ -25,16 +25,16 @@ GoMavo 是一个面向 macOS 的专注型 Go IDE：每个窗口打开一个项�
 
 <table>
   <tr>
-    <td width="50%"><img src="docs/images/test-runner.png" alt="测试运行器"><p align="center"><sub>从 gutter 运行测试；结果树支持单项重跑</sub></p></td>
-    <td width="50%"><img src="docs/images/git.png" alt="Git 工具窗口"><p align="center"><sub>Git 工具窗口与统一差异、提交框</sub></p></td>
+    <td width="50%"><img src="docs/images/test-runner.jpg" alt="测试运行器"><p align="center"><sub>从 gutter 运行测试；结果树支持单项重跑</sub></p></td>
+    <td width="50%"><img src="docs/images/git.jpg" alt="Git 工具窗口"><p align="center"><sub>Git 工具窗口与统一差异、提交框</sub></p></td>
   </tr>
   <tr>
-    <td width="50%"><img src="docs/images/debugger.png" alt="调试器"><p align="center"><sub>断点与基于 Delve 的 Debug 工具窗口</sub></p></td>
-    <td width="50%"><img src="docs/images/go-to-file.png" alt="转到文件"><p align="center"><sub>转到文件浮层（⌘⇧O）</sub></p></td>
+    <td width="50%"><img src="docs/images/debugger.jpg" alt="调试器"><p align="center"><sub>断点与基于 Delve 的 Debug 工具窗口</sub></p></td>
+    <td width="50%"><img src="docs/images/go-to-file.jpg" alt="转到文件"><p align="center"><sub>转到文件浮层（⌘⇧O）</sub></p></td>
   </tr>
   <tr>
-    <td width="50%"><img src="docs/images/gopls-hover.png" alt="gopls 悬停"><p align="center"><sub>gopls 悬停文档</sub></p></td>
-    <td width="50%"><img src="docs/images/terminal.png" alt="终端"><p align="center"><sub>基于真实 PTY 的集成终端</sub></p></td>
+    <td width="50%"><img src="docs/images/gopls-hover.jpg" alt="gopls 悬停"><p align="center"><sub>gopls 悬停文档</sub></p></td>
+    <td width="50%"><img src="docs/images/terminal.jpg" alt="终端"><p align="center"><sub>基于真实 PTY 的集成终端</sub></p></td>
   </tr>
 </table>
 

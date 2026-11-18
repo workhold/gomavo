@@ -6,7 +6,7 @@
 
 Tauri 2 · React 19 · Monaco Editor · `gopls` · Delve
 
-![Editor](docs/images/editor.png)
+![Editor](docs/images/editor.jpg)
 
 **English** | [简体中文](README.zh-CN.md)
 
@@ -25,16 +25,16 @@ GoMavo is a focused Go IDE for macOS: one project per window, familiar macOS key
 
 <table>
   <tr>
-    <td width="50%"><img src="docs/images/test-runner.png" alt="Test runner"><p align="center"><sub>Run tests from the gutter; the results tree supports per-case reruns</sub></p></td>
-    <td width="50%"><img src="docs/images/git.png" alt="Git tool window"><p align="center"><sub>Git tool window with unified diff and commit box</sub></p></td>
+    <td width="50%"><img src="docs/images/test-runner.jpg" alt="Test runner"><p align="center"><sub>Run tests from the gutter; the results tree supports per-case reruns</sub></p></td>
+    <td width="50%"><img src="docs/images/git.jpg" alt="Git tool window"><p align="center"><sub>Git tool window with unified diff and commit box</sub></p></td>
   </tr>
   <tr>
-    <td width="50%"><img src="docs/images/debugger.png" alt="Debugger"><p align="center"><sub>Breakpoints and the Delve-backed Debug tool window</sub></p></td>
-    <td width="50%"><img src="docs/images/go-to-file.png" alt="Go to File"><p align="center"><sub>Go to File overlay (⌘⇧O)</sub></p></td>
+    <td width="50%"><img src="docs/images/debugger.jpg" alt="Debugger"><p align="center"><sub>Breakpoints and the Delve-backed Debug tool window</sub></p></td>
+    <td width="50%"><img src="docs/images/go-to-file.jpg" alt="Go to File"><p align="center"><sub>Go to File overlay (⌘⇧O)</sub></p></td>
   </tr>
   <tr>
-    <td width="50%"><img src="docs/images/gopls-hover.png" alt="gopls hover"><p align="center"><sub>Hover documentation from gopls</sub></p></td>
-    <td width="50%"><img src="docs/images/terminal.png" alt="Terminal"><p align="center"><sub>Integrated terminal on a real PTY</sub></p></td>
+    <td width="50%"><img src="docs/images/gopls-hover.jpg" alt="gopls hover"><p align="center"><sub>Hover documentation from gopls</sub></p></td>
+    <td width="50%"><img src="docs/images/terminal.jpg" alt="Terminal"><p align="center"><sub>Integrated terminal on a real PTY</sub></p></td>
   </tr>
 </table>
 
