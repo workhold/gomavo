@@ -172,6 +172,7 @@ export class GoplsClient {
   private readonly onMissingModule?: (module: string) => void
   private readonly documents = new Map<string, OpenDocument>()
   private readonly diagnostics = new Map<string, LspDiagnostic[]>()
+  private lastEmittedDiagnostics: DiagnosticEntry[] | null = null
   private readonly codeActionSnapshots = new WeakMap<LspCodeAction, CodeActionSnapshot>()
   private readonly semanticListeners = new Set<() => void>()
   private readonly pending = new Map<number, PendingRequest>()
@@ -1570,6 +1571,13 @@ export class GoplsClient {
         })
       }
     }
+    const previous = this.lastEmittedDiagnostics
+    if (previous?.length === entries.length && entries.every((entry, index) => {
+      const before = previous[index]
+      return entry.path === before.path && entry.line === before.line && entry.column === before.column
+        && entry.severity === before.severity && entry.message === before.message
+    })) return
+    this.lastEmittedDiagnostics = entries
     this.onDiagnostics(entries)
   }
 

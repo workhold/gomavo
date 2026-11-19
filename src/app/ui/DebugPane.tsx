@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { memo, useState } from 'react'
 import {
   ArrowUpFromLine, Bug, ChevronDown, ChevronRight, CircleDot, CornerDownRight, Eye, Play, Plus,
   Square, StepForward, X,
@@ -56,7 +56,7 @@ function VariableNode(props: {
 }
 
 /** Debugger tool window: controls, goroutines, call stack, watches, variables, and console. */
-export function DebugPane(props: DebugPaneProps) {
+export const DebugPane = memo(function DebugPane(props: DebugPaneProps) {
   const {
     t, debugState, frames, selectedFrameIndex, selectFrame, variables, expandVariable, consoleLines,
     control, currentThreadId, threads, selectThread, watches, addWatch, removeWatch, evaluateRepl,
@@ -165,4 +165,4 @@ export function DebugPane(props: DebugPaneProps) {
       </div>
     </div>
   </div>
-}
+})

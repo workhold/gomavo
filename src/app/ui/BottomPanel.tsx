@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type PointerEvent, type ReactNode } from 'react'
+import { memo, useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent, type PointerEvent, type ReactNode } from 'react'
 import type { RefObject } from 'react'
 import {
   AlertCircle, Bug, Check, ChevronDown, FlaskConical, GitBranch, History,
@@ -119,7 +119,7 @@ function savedPanelHeight(): number {
 }
 
 /** One console line with ANSI colors and clickable file:line references. */
-function OutputText(props: { line: OutputLine; root: string | null; projectFiles: FileEntry[]; navigateTo: (target: { path: string; line: number; column: number }) => Promise<boolean> }) {
+const OutputText = memo(function OutputText(props: { line: OutputLine; root: string | null; projectFiles: FileEntry[]; navigateTo: (target: { path: string; line: number; column: number }) => Promise<boolean> }) {
   const { line, root, projectFiles, navigateTo } = props
   const paths = projectFiles.map((entry) => entry.path)
   const references = useMemo(() => findOutputReferences(line.text), [line.text])
@@ -143,7 +143,7 @@ function OutputText(props: { line: OutputLine; root: string | null; projectFiles
   }
   if (consumed < line.text.length) nodes.push(...parseAnsiLine(line.text.slice(consumed)).map((span, index) => <span className={span.className} key={`t${consumed}-${index}`}>{span.text}</span>))
   return <>{nodes}</>
-}
+})
 
 interface TestTreeNode {
   name: string
@@ -186,7 +186,7 @@ function buildTestTree(results: TestResult[]): TestTreeNode[] {
   return children
 }
 
-function TestTreeNodes(props: {
+const TestTreeNodes = memo(function TestTreeNodes(props: {
   t: BottomPanelProps['t']
   nodes: TestTreeNode[]
   packageName: string
@@ -210,9 +210,9 @@ function TestTreeNodes(props: {
       {children.length ? <TestTreeNodes t={t} nodes={children} packageName={packageName} depth={depth + 1} runningTask={runningTask} jumpToTest={jumpToTest} rerunTest={rerunTest} onSelectCase={onSelectCase} /> : null}
     </div>
   })}</>
-}
+})
 
-export function BottomPanel(props: BottomPanelProps) {
+export const BottomPanel = memo(function BottomPanel(props: BottomPanelProps) {
   const {
     t, locale, root, panelOpen, setPanelOpen, panelView, setPanelView, terminalFontSize, runningTask, runTask,
     lastTestOptionsRef, output, setOutput, testResults, testPassed, testFailed, testPackages, testOutput,
@@ -228,6 +228,7 @@ export function BottomPanel(props: BottomPanelProps) {
     mergeResolved, refreshGit, notify, formatError,
   } = props
   const [selectedCase, setSelectedCase] = useState<{ packageName: string; fullName: string } | null>(null)
+  const selectCase = useCallback((packageName: string, fullName: string) => setSelectedCase({ packageName, fullName }), [])
   const panelRef = useRef<HTMLElement | null>(null)
   const dragRef = useRef<{ pointerId: number; y: number; height: number } | null>(null)
   const latestHeightRef = useRef<number | null>(null)
@@ -301,6 +302,25 @@ export function BottomPanel(props: BottomPanelProps) {
   const totalCoverage = coverageFiles.length
     ? Math.round(coverageFiles.reduce((total, entry) => total + coveragePercent(entry.file.blocks), 0) / coverageFiles.length)
     : null
+  const testTrees = useMemo(() => new Map(testPackages.map(([packageName, results]) => [packageName, buildTestTree(results)])), [testPackages])
+  const testPackageRows = useMemo(() => testPackages.length ? testPackages.map(([packageName, results]) => {
+    const packageStatus = results.find((result) => result.name === '(package)')?.status ?? (results.some((result) => result.status === 'fail') ? 'fail' : results.every((result) => result.status === 'pass') ? 'pass' : 'run')
+    const tree = testTrees.get(packageName)!
+    return <div key={packageName}>
+      <div className={`test-tree-row package ${packageStatus === 'fail' ? 'failed' : packageStatus === 'pass' ? 'passed' : ''}`} title={packageName}><ChevronDown size={13} />{packageStatus === 'fail' ? <X size={14} /> : packageStatus === 'pass' ? <Check size={14} /> : <Play size={13} />}<span>{packageName.split('/').at(-1) || packageName}</span><button type="button" className="test-rerun" title={t('重跑 {name}', { name: packageName })} disabled={!packageDirectory(packageName) || !!runningTask} onClick={() => { const directory = packageDirectory(packageName); if (directory) runSelection('test', { scope: 'package', targetPath: directory, label: `go test ${packageName}` }) }}><Play size={12} /></button></div>
+      <TestTreeNodes t={t} nodes={tree} packageName={packageName} depth={1} runningTask={runningTask} jumpToTest={jumpToTest} rerunTest={rerunTest} onSelectCase={selectCase} />
+    </div>
+  }) : <div className="panel-empty">{t('运行测试后，这里会显示测试树与结果。')}</div>, [testPackages, testTrees, t, packageDirectory, runningTask, runSelection, jumpToTest, rerunTest, selectCase])
+  const outputRows = useMemo(() => output.length
+    ? output.map((line) => <div className={`output-line ${line.stream}`} key={line.id}><OutputText line={line} root={root} projectFiles={projectFiles} navigateTo={navigateTo} /></div>)
+    : <div className="panel-empty">{t('运行或编译项目后，结果将在这里显示。')}</div>, [output, root, projectFiles, navigateTo, t])
+  const testConsoleRows = useMemo(() => {
+    const lines = selectedCase ? testOutputByCase.get(`${selectedCase.packageName}::${selectedCase.fullName}`) : null
+    return lines?.length ? lines.map((line) => <div className={`output-line ${line.stream}`} key={line.id}><OutputText line={line} root={root} projectFiles={projectFiles} navigateTo={navigateTo} /></div>)
+      : selectedCase ? <div className="panel-empty">{t('该用例没有输出。')}</div>
+        : testOutput.length ? testOutput.map((line) => <div className={`output-line ${line.stream}`} key={line.id}><OutputText line={line} root={root} projectFiles={projectFiles} navigateTo={navigateTo} /></div>)
+          : <div className="panel-empty">{t('测试输出将显示在这里。')}</div>
+  }, [selectedCase, testOutputByCase, testOutput, root, projectFiles, navigateTo, t])
 
   const tab = (view: PanelView, label: string, icon: ReactNode, extra?: ReactNode) => <button
     className={panelView === view ? 'selected' : ''} type="button"
@@ -344,9 +364,7 @@ export function BottomPanel(props: BottomPanelProps) {
     </div>
     <div className="panel-body">
       <div className={`panel-page ${panelView === 'terminal' ? 'visible' : ''}`}><TerminalPane root={root} visible={panelOpen && panelView === 'terminal'} locale={locale} fontSize={terminalFontSize} /></div>
-      <div className={`panel-page output-page ${panelView === 'output' ? 'visible' : ''}`}>{output.length
-        ? output.map((line) => <div className={`output-line ${line.stream}`} key={line.id}><OutputText line={line} root={root} projectFiles={projectFiles} navigateTo={navigateTo} /></div>)
-        : <div className="panel-empty">{t('运行或编译项目后，结果将在这里显示。')}</div>}</div>
+      <div className={`panel-page output-page ${panelView === 'output' ? 'visible' : ''}`}>{outputRows}</div>
       <div className={`panel-page search-page ${panelView === 'search' ? 'visible' : ''}`}>
         <SearchPane t={t} locale={locale} root={root} revision={searchRevision} navigateTo={navigateTo} onReplaced={onReplaced} />
       </div>
@@ -389,32 +407,14 @@ export function BottomPanel(props: BottomPanelProps) {
                 title={path}
               ><span>{root ? relativePath(root, path) : path}</span><b className={coveragePercent(file.blocks) >= 60 ? 'good' : 'low'}>{coveragePercent(file.blocks)}%</b></button>)}
             </div>}
-            {testPackages.length ? testPackages.map(([packageName, results]) => {
-              const packageStatus = results.find((result) => result.name === '(package)')?.status ?? (results.some((result) => result.status === 'fail') ? 'fail' : results.every((result) => result.status === 'pass') ? 'pass' : 'run')
-              const tree = buildTestTree(results)
-              return <div key={packageName}>
-                <div className={`test-tree-row package ${packageStatus === 'fail' ? 'failed' : packageStatus === 'pass' ? 'passed' : ''}`} title={packageName}><ChevronDown size={13} />{packageStatus === 'fail' ? <X size={14} /> : packageStatus === 'pass' ? <Check size={14} /> : <Play size={13} />}<span>{packageName.split('/').at(-1) || packageName}</span><button type="button" className="test-rerun" title={t('重跑 {name}', { name: packageName })} disabled={!packageDirectory(packageName) || !!runningTask} onClick={() => { const directory = packageDirectory(packageName); if (directory) runSelection('test', { scope: 'package', targetPath: directory, label: `go test ${packageName}` }) }}><Play size={12} /></button></div>
-                <TestTreeNodes
-                  t={t}
-                  nodes={tree} packageName={packageName} depth={1} runningTask={runningTask}
-                  jumpToTest={jumpToTest} rerunTest={rerunTest}
-                  onSelectCase={(pkg, fullName) => setSelectedCase({ packageName: pkg, fullName })}
-                />
-              </div>
-            }) : <div className="panel-empty">{t('运行测试后，这里会显示测试树与结果。')}</div>}
+            {testPackageRows}
           </div>
           <div className="test-console">
             <div className="test-console-title">
               {t('Console')}
               {selectedCase && <button type="button" className="test-case-clear" onClick={() => setSelectedCase(null)}>{selectedCase.fullName} ✕</button>}
             </div>
-            {(() => {
-              const lines = selectedCase ? testOutputByCase.get(`${selectedCase.packageName}::${selectedCase.fullName}`) : null
-              return lines?.length ? lines.map((line) => <div className={`output-line ${line.stream}`} key={line.id}><OutputText line={line} root={root} projectFiles={projectFiles} navigateTo={navigateTo} /></div>)
-                : selectedCase ? <div className="panel-empty">{t('该用例没有输出。')}</div>
-                  : testOutput.length ? testOutput.map((line) => <div className={`output-line ${line.stream}`} key={line.id}><OutputText line={line} root={root} projectFiles={projectFiles} navigateTo={navigateTo} /></div>)
-                    : <div className="panel-empty">{t('测试输出将显示在这里。')}</div>
-            })()}
+            {testConsoleRows}
           </div>
         </div>
       </div>
@@ -448,4 +448,4 @@ export function BottomPanel(props: BottomPanelProps) {
       </> : null}</div>
     </div>
   </section>
-}
+})

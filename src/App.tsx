@@ -61,6 +61,10 @@ import { useWorkspaceWindows } from './app/hooks/useWorkspaceWindows'
 import { useNativeMenus } from './app/hooks/useNativeMenus'
 import { useTreeReveal } from './app/hooks/useTreeReveal'
 
+const EMPTY_OPEN_DOCUMENTS: OpenFile[] = []
+const EMPTY_LOCAL_HISTORY: ReturnType<LocalEditHistory['getEntries']> = []
+const EMPTY_MERGE_CONFLICTS: string[] = []
+
 /** Parse `KEY=VALUE` lines from a saved run configuration into env vars. */
 function parseEnvVars(text: string | null | undefined): Record<string, string> | undefined {
   if (!text?.trim()) return undefined
@@ -541,7 +545,7 @@ function App() {
   const selectedHistoryEntry = gitFileHistory?.entries.find((entry) => entry.hash === gitFileHistory.selectedHash) ?? null
   const localHistoryEntries = useMemo(() => gitFileHistory && root
     ? localEditHistoryRef.current.getEntries(joinPath(root, gitFileHistory.path))
-    : [], [gitFileHistory?.path, root, localHistoryRevision])
+    : EMPTY_LOCAL_HISTORY, [gitFileHistory?.path, root, localHistoryRevision])
   const selectedLocalHistoryEntry = localHistoryEntries.find((entry) => entry.id === selectedLocalHistoryId) ?? localHistoryEntries[0] ?? null
   const selectedLocalDiff = useMemo(() => selectedLocalHistoryEntry && gitFileHistory
     ? createLocalUnifiedDiff(selectedLocalHistoryEntry.before, selectedLocalHistoryEntry.after, gitFileHistory.path)
@@ -651,6 +655,7 @@ function App() {
     setPanelOpen, setPanelView, setModuleMenu, setConfigMenu, setRunConfig, setRunOptions,
     notify, formatError, t,
   })
+  const installDlv = useCallback(() => { void runTask('install_dlv') }, [runTask])
   const {
     debugState, debugFrames, debugSelectedFrameIndex, selectFrame: hookSelectFrame,
     debugVariables, debugCurrentThreadId, debugConsole, debugLocation, debugThreads,
@@ -1861,11 +1866,11 @@ function App() {
         packageDirectory={packageDirectory} runSelection={runSelection} jumpToTest={jumpToTest}
         rerunTest={rerunTest} diagnostics={diagnostics} navigateTo={navigateTo} gitDiff={gitDiff}
         openFile={openFile} gitFileHistory={gitFileHistory} fileHistorySource={fileHistorySource}
-        setFileHistorySource={setFileHistorySource} localHistoryEntries={localHistoryEntries}
-        selectedLocalHistoryEntry={selectedLocalHistoryEntry}
-        setSelectedLocalHistoryId={setSelectedLocalHistoryId} selectedLocalDiff={selectedLocalDiff}
+        setFileHistorySource={setFileHistorySource} localHistoryEntries={panelView === 'history' ? localHistoryEntries : EMPTY_LOCAL_HISTORY}
+        selectedLocalHistoryEntry={panelView === 'history' ? selectedLocalHistoryEntry : null}
+        setSelectedLocalHistoryId={setSelectedLocalHistoryId} selectedLocalDiff={panelView === 'history' ? selectedLocalDiff : ''}
         selectedHistoryEntry={selectedHistoryEntry} openGitFileCommitDiff={openGitFileCommitDiff}
-        projectFiles={projectFiles} openDocuments={tabs} searchRevision={searchRevision} onReplaced={onReplaced}
+        projectFiles={projectFiles} openDocuments={panelView === 'todo' ? tabs : EMPTY_OPEN_DOCUMENTS} searchRevision={searchRevision} onReplaced={onReplaced}
         debugState={debugState} debugFrames={debugFrames} debugSelectedFrameIndex={debugSelectedFrameIndex}
         debugSelectFrame={hookSelectFrame} debugVariables={debugVariables} debugExpandVariable={expandVariable}
         debugConsole={debugConsole} debugControl={debugControl} debugCurrentThreadId={debugCurrentThreadId}
@@ -1873,10 +1878,10 @@ function App() {
         debugWatches={debugWatches} debugAddWatch={addWatch} debugRemoveWatch={removeWatch}
         debugEvaluateRepl={evaluateRepl}
         usages={usages} usagesBusy={usagesBusy}
-        dlvInstalled={!!versions?.dlv} installDlv={() => void runTask('install_dlv')}
+        dlvInstalled={!!versions?.dlv} installDlv={installDlv}
         startDebug={debugCurrentContext}
         gitGraph={gitGraph} gitGraphLoading={gitGraphLoading} refreshGitGraph={openGitGraph}
-        mergeConflicts={mergeConflicts ?? []} mergeResolverPath={mergeResolverPath}
+        mergeConflicts={mergeConflicts ?? EMPTY_MERGE_CONFLICTS} mergeResolverPath={mergeResolverPath}
         openMergeResolver={openMergeResolver} mergeResolved={mergeResolved}
         refreshGit={refreshGit} notify={notify} formatError={formatError}
       />

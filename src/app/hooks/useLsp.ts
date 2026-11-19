@@ -81,10 +81,18 @@ export function useLsp(params: UseLspParams) {
 
   useEffect(() => {
     if (!root || !monacoApi) return
-    if (!goplsAvailable) { setLspState('missing'); return }
+    if (!goplsAvailable) { setLspState('missing'); setDiagnostics((current) => current.length ? [] : current); return }
+    setDiagnostics((current) => current.length ? [] : current)
     let cancelled = false
     let failed = false
-    const client = new GoplsClient(root, monacoApi, setDiagnostics, (message) => {
+    let diagnosticsTimer: number | undefined
+    const client = new GoplsClient(root, monacoApi, (entries) => {
+      if (cancelled) return
+      window.clearTimeout(diagnosticsTimer)
+      // gopls can publish several intermediate snapshots for one edit. Commit
+      // the settled list once so the panel and count do not flicker per reply.
+      diagnosticsTimer = window.setTimeout(() => setDiagnostics(entries), 120)
+    }, (message) => {
       if (!cancelled) { failed = true; setLspState('error'); setLspError(message) }
     }, (target, source) => navigateTo(target, captureEditorLocation(source), true), (changes, options) => {
       const apply = workspaceEditsRef.current
@@ -111,7 +119,7 @@ export function useLsp(params: UseLspParams) {
         setGoplsLog((current) => [...current, message].slice(-60))
       }
     })
-    return () => { cancelled = true; if (lspRef.current === client) lspRef.current = null; void client.stop() }
+    return () => { cancelled = true; window.clearTimeout(diagnosticsTimer); if (lspRef.current === client) lspRef.current = null; void client.stop() }
   }, [root, monacoApi, goplsAvailable, lspEpoch, retryEpoch, navigateTo, captureEditorLocation, workspaceEditsRef])
 
   // Restart crashed or failed servers with bounded backoff. A successful

@@ -120,9 +120,9 @@ jobs:
           tagName: ${{ github.ref_name }}
           releaseName: 'GoMavo ${{ github.ref_name }}'
           releaseBody: |
-            GoMavo ${{ github.ref_name }} fixes macOS Chinese input: Pinyin composition stays on the code line and keeps the syntax color of comments and strings.
+            GoMavo ${{ github.ref_name }} reduces typing lag while the bottom tool window is open. Test results, run output, the terminal, and the debugger avoid unrelated renders. Repeated gopls diagnostics are deduplicated and short bursts are combined so the Problems count no longer flickers for each intermediate update.
 
-            This release also adds a per-window Go toolchain selector, automatic gopls recovery, and side-by-side diffs in Git and local history. It improves editor state handling, settings, and project windows. Existing settings, project code style, and older native plugin packages remain compatible.
+            The Problems count still updates when diagnostics actually change.
 
             macOS upgrade: remove the old `/Applications/MG Land.app` before copying `GoMavo.app` from the DMG into Applications. The two apps have the same bundle identifier to preserve existing settings, so leaving the old app installed can make macOS launch or display MG Land.
 

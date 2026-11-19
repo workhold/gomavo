@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { memo, useEffect, useRef, useState } from 'react'
 import { listen, type UnlistenFn } from '@tauri-apps/api/event'
 import { getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow'
 import { Terminal } from '@xterm/xterm'
@@ -24,7 +24,7 @@ interface TerminalSession {
 }
 
 /** The terminal tool window: multiple shell sessions in tabs. */
-export function TerminalPane({ root, visible, locale, fontSize }: Props) {
+export const TerminalPane = memo(function TerminalPane({ root, visible, locale, fontSize }: Props) {
   const [sessions, setSessions] = useState<TerminalSession[]>([{ key: 1, title: '1' }])
   const [activeKey, setActiveKey] = useState(1)
   const nextKeyRef = useRef(2)
@@ -65,7 +65,7 @@ export function TerminalPane({ root, visible, locale, fontSize }: Props) {
       />)}
     </div>
   </div>
-}
+})
 
 function TerminalSessionView({ root, visible, locale, fontSize }: Props) {
   const hostRef = useRef<HTMLDivElement>(null)
