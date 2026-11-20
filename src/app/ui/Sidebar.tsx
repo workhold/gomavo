@@ -1,4 +1,4 @@
-import { useState, type ReactNode, type RefObject } from 'react'
+import { memo, useState, type ReactNode, type RefObject } from 'react'
 import {
   Archive, ArrowDownToLine, ArrowUpFromLine, Book, Bookmark, Braces, Check, ChevronDown, ChevronRight, ChevronsDownUp,
   CloudDownload, FilePlus2, FolderOpen, FolderPlus, GitBranch, Library, LocateFixed, Package, RefreshCw, X,
@@ -76,7 +76,7 @@ export interface SidebarProps {
   navigateTo: (target: { path: string; line: number; column: number }) => Promise<boolean>
 }
 
-export function Sidebar(props: SidebarProps) {
+export const Sidebar = memo(function Sidebar(props: SidebarProps) {
   const {
     t, locale, sideView, root, tree, expanded, setExpanded, setRevealPath, toggleFolder, refreshDirectory,
     refreshProjectFiles, refreshGit, showHiddenFiles, treeScrollRef, selectedTreePath, setSelectedTreePath,
@@ -281,4 +281,4 @@ export function Sidebar(props: SidebarProps) {
       </>}</div>
     </>}
   </aside>
-}
+})

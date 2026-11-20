@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { applyMonacoContentChanges } from '../src/lib/lsp/contentSync.ts'
+import { applyMonacoContentChanges, canApplyMonacoContentChanges } from '../src/lib/lsp/contentSync.ts'
 
 function change(rangeOffset, rangeLength, text) {
   return {
@@ -27,4 +27,11 @@ test('detects an incremental edit based on a stale document', () => {
 test('rejects overlapping and out-of-bounds ranges for full-text fallback', () => {
   assert.equal(applyMonacoContentChanges('abcdef', [change(1, 3, 'X'), change(2, 2, 'Y')]), null)
   assert.equal(applyMonacoContentChanges('abc', [change(4, 0, 'X')]), null)
+})
+
+test('validates incremental change lengths without copying the document', () => {
+  const edits = [change(6, 4, 'B'), change(0, 5, 'A')]
+  assert.equal(canApplyMonacoContentChanges(16, edits, 9), true)
+  assert.equal(canApplyMonacoContentChanges(16, edits, 10), false)
+  assert.equal(canApplyMonacoContentChanges(6, [change(1, 3, 'X'), change(2, 2, 'Y')], 3), false)
 })

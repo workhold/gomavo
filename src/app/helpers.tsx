@@ -73,6 +73,6 @@ export function displayedLineEnding(file: OpenFile | null): string {
   return file.editorConfig?.endOfLine?.toUpperCase() ?? 'LF'
 }
 
-export function iconButton(label: string, Icon: LucideIcon, onClick: () => void, disabled = false, className = '') {
-  return <button className={`icon-button ${className}`} type="button" title={label} aria-label={label} onClick={onClick} disabled={disabled}><Icon size={15} strokeWidth={1.8} /></button>
+export function iconButton(label: string, Icon: LucideIcon, onClick: () => void, disabled = false, className = '', tooltipPlacement?: 'top' | 'bottom' | 'left' | 'right') {
+  return <button className={`icon-button ${className}`} type="button" title={tooltipPlacement ? undefined : label} data-tooltip={tooltipPlacement ? label : undefined} data-tooltip-placement={tooltipPlacement} aria-label={label} onClick={onClick} disabled={disabled}><Icon size={15} strokeWidth={1.8} /></button>
 }

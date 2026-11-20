@@ -152,6 +152,7 @@ const dictionary = {
   '运行 Go 项目': { 'zh-CN': '运行 Go 项目', 'en-US': 'Run Go project' },
   '运行测试后，这里会显示测试树与结果。': { 'zh-CN': '运行测试后，这里会显示测试树与结果。', 'en-US': 'Run tests to see the test tree and results here.' },
   '运行当前配置': { 'zh-CN': '运行当前配置', 'en-US': 'Run current configuration' },
+  '选择运行配置': { 'zh-CN': '选择运行配置', 'en-US': 'Select run configuration' },
   '运行或编译项目后，结果将在这里显示。': { 'zh-CN': '运行或编译项目后，结果将在这里显示。', 'en-US': 'Run or build the project to see output here.' },
   '运行全部测试': { 'zh-CN': '运行全部测试', 'en-US': 'Run all tests' },
   '展开工具窗口': { 'zh-CN': '展开工具窗口', 'en-US': 'Expand tool panel' },

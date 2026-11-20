@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
+import { startTransition, useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import type { OnChange } from '@monaco-editor/react'
 import type * as Monaco from 'monaco-editor'
 import { ask } from '@tauri-apps/plugin-dialog'
@@ -116,7 +116,7 @@ function useDebouncedValue<T>(value: T, delay: number, key?: unknown): T {
     const timer = window.setTimeout(() => setDeferred(value), delay)
     return () => window.clearTimeout(timer)
   }, [value, delay, key])
-  return deferred
+  return lastKey.current === key ? deferred : value
 }
 
 
@@ -283,9 +283,11 @@ function App() {
   const activeIndentOptions = editorConfigIndentOptions(activeFile?.editorConfig ?? {}, preferences.editor)
   // Whole-file parses (declarations, package line) lag one beat behind typing:
   // on a 10k-line file they cost several milliseconds per keystroke otherwise.
-  const activeFileContent = useDebouncedValue(activeFile?.content ?? '', 250)
+  const activeFileContent = useDebouncedValue(activeFile?.content ?? '', 250, activeFile?.path)
   const activeTestDeclarations = useMemo(() => activeFile?.path.endsWith('_test.go') ? goTestDeclarations(activeFileContent) : [], [activeFileContent, activeFile?.path])
   const activePackageLine = useMemo(() => activeFile?.path.endsWith('_test.go') ? goPackageDeclarationLine(activeFileContent) : null, [activeFileContent, activeFile?.path])
+  const activeSourceDeclarations = useMemo(() => activeFile?.path.endsWith('.go') && !activeFile.binary
+    ? goSourceDeclarations(activeFileContent) : [], [activeFile?.binary, activeFile?.path, activeFileContent])
   /** Gutter click awaiting its first `go test` event; drives the spinner before compile output arrives. */
   const [pendingTestRun, setPendingTestRun] = useState<{ path: string; testName?: string } | null>(null)
   const dirtyFiles = tabs.filter((file) => file.content !== file.savedContent)
@@ -294,9 +296,9 @@ function App() {
   // Breadcrumb symbol: the Go declaration enclosing the cursor line.
   const activeSymbol = useMemo(() => {
     if (!activeFile?.path.endsWith('.go') || activeFile.binary || !cursor.line) return null
-    const declaration = goSourceDeclarations(activeFileContent).find((item) => item.startLine <= cursor.line && cursor.line <= item.endLine)
+    const declaration = activeSourceDeclarations.find((item) => item.startLine <= cursor.line && cursor.line <= item.endLine)
     return declaration ? { name: declaration.name, line: declaration.startLine } : null
-  }, [activeFile?.binary, activeFileContent, activeFile?.path, cursor.line])
+  }, [activeFile?.binary, activeFile?.path, activeSourceDeclarations, cursor.line])
 
   useEffect(() => {
     editorTabListRef.current?.querySelector<HTMLElement>('.editor-tab.active')?.scrollIntoView({ block: 'nearest', inline: 'nearest' })
@@ -1124,20 +1126,25 @@ function App() {
     // Each editor reports its own model. Matching by text can select the wrong
     // file when the main and split panes happen to contain the same content.
     const model = (source === 'main' ? editorRef.current : splitEditorRef.current)?.getModel()
-    if (!model || model.getValue() !== value) return
+    if (!model) return
     const modelUri = model.uri.toString()
     const file = tabsRef.current.find((item) => fileUri(item.path) === modelUri)
     if (!file || file.readOnly || file.content === value) return
-    if (localEditHistoryRef.current.record(file.path, file.content, value, event)) setLocalHistoryRevision((current) => current + 1)
+    const historyChanged = localEditHistoryRef.current.record(file.path, file.content, value, event)
     const next = tabsRef.current.map((item) => item.path === file.path ? { ...item, content: value } : item)
     tabsRef.current = next
-    setTabs(next)
+    // Monaco owns the immediate text and caret. Keep React's surrounding UI
+    // lower priority so a large project tree cannot delay the next keystroke.
+    startTransition(() => {
+      setTabs(next)
+      if (historyChanged) setLocalHistoryRevision((current) => current + 1)
+    })
     if (file.path.endsWith('.go')) {
       const client = lspRef.current
       if (!client) return
       // Keystroke edits ride through as incremental changes; anything without
       // change metadata falls back to a full-text sync.
-      if (event?.changes?.length) void client.changeDocumentIncremental(file.path, event.changes, value).catch(() => undefined)
+      if (event?.changes?.length) void client.changeDocumentIncremental(file.path, event.changes, value, event.versionId).catch(() => undefined)
       else void client.changeDocument(file.path, value).catch(() => undefined)
     }
   }, [])
@@ -1630,9 +1637,17 @@ function App() {
 
   useEffect(() => {
     if (!context && !tabContext && !moduleMenu && !configMenu && !branchMenu && !projectMenuOpen) return
-    const close = () => { setContext(null); setTabContext(null); setTabSubmenu(null); setModuleMenu(false); setConfigMenu(false); setBranchMenu(false); setProjectMenuOpen(false) }
-    window.addEventListener('click', close)
-    return () => window.removeEventListener('click', close)
+    const closeOutside = (event: PointerEvent) => {
+      const target = event.target
+      if (!(target instanceof Element)) return
+      if (!target.closest('.context-menu')) { setContext(null); setTabContext(null); setTabSubmenu(null) }
+      if (!target.closest('.module-menu-anchor')) setModuleMenu(false)
+      if (!target.closest('.run-config-anchor')) setConfigMenu(false)
+      if (!target.closest('.branch-menu-anchor')) setBranchMenu(false)
+      if (!target.closest('.project-menu-anchor')) setProjectMenuOpen(false)
+    }
+    window.addEventListener('pointerdown', closeOutside, true)
+    return () => window.removeEventListener('pointerdown', closeOutside, true)
   }, [context, tabContext, moduleMenu, configMenu, branchMenu, projectMenuOpen])
 
   const { beforeEditorMount, onEditorMount, onSplitEditorMount } = useEditorMount({
@@ -1807,16 +1822,16 @@ function App() {
 
     <div className="workspace">
       <nav className="activity-bar" aria-label={t('工具窗口')}>
-        <button className={`activity-button ${sidebarOpen && sideView === 'files' ? 'selected' : ''}`} type="button" title={t('Project')} aria-label={t('Project')} aria-pressed={sidebarOpen && sideView === 'files'} onClick={() => { if (sidebarOpen && sideView === 'files') setSidebarOpen(false); else { setSideView('files'); setSidebarOpen(true) } }}><Folder size={20} strokeWidth={1.7} /></button>
-        <button className={`activity-button ${sidebarOpen && sideView === 'git' ? 'selected' : ''}`} type="button" title="Git" aria-label="Git" aria-pressed={sidebarOpen && sideView === 'git'} onClick={() => { if (sidebarOpen && sideView === 'git') setSidebarOpen(false); else { setSideView('git'); setSidebarOpen(true); if (root) void refreshGit(root, { refreshIgnored: true }) } }}><GitBranch size={19} strokeWidth={1.7} /></button>
-        <button className={`activity-button ${sidebarOpen && sideView === 'structure' ? 'selected' : ''}`} type="button" title={t('结构')} aria-label={t('结构')} aria-pressed={sidebarOpen && sideView === 'structure'} onClick={() => { if (sidebarOpen && sideView === 'structure') setSidebarOpen(false); else { setSideView('structure'); setSidebarOpen(true) } }}><ListTree size={19} strokeWidth={1.7} /></button>
-        <button className={`activity-button ${sidebarOpen && sideView === 'bookmarks' ? 'selected' : ''}`} type="button" title={t('书签')} aria-label={t('书签')} aria-pressed={sidebarOpen && sideView === 'bookmarks'} onClick={() => { if (sidebarOpen && sideView === 'bookmarks') setSidebarOpen(false); else { setSideView('bookmarks'); setSidebarOpen(true) } }}><Bookmark size={19} strokeWidth={1.7} /></button>
+        <button className={`activity-button ${sidebarOpen && sideView === 'files' ? 'selected' : ''}`} type="button" data-tooltip={t('Project')} data-tooltip-placement="right" aria-label={t('Project')} aria-pressed={sidebarOpen && sideView === 'files'} onClick={() => { if (sidebarOpen && sideView === 'files') setSidebarOpen(false); else { setSideView('files'); setSidebarOpen(true) } }}><Folder size={20} strokeWidth={1.7} /></button>
+        <button className={`activity-button ${sidebarOpen && sideView === 'git' ? 'selected' : ''}`} type="button" data-tooltip="Git" data-tooltip-placement="right" aria-label="Git" aria-pressed={sidebarOpen && sideView === 'git'} onClick={() => { if (sidebarOpen && sideView === 'git') setSidebarOpen(false); else { setSideView('git'); setSidebarOpen(true); if (root) void refreshGit(root, { refreshIgnored: true }) } }}><GitBranch size={19} strokeWidth={1.7} /></button>
+        <button className={`activity-button ${sidebarOpen && sideView === 'structure' ? 'selected' : ''}`} type="button" data-tooltip={t('结构')} data-tooltip-placement="right" aria-label={t('结构')} aria-pressed={sidebarOpen && sideView === 'structure'} onClick={() => { if (sidebarOpen && sideView === 'structure') setSidebarOpen(false); else { setSideView('structure'); setSidebarOpen(true) } }}><ListTree size={19} strokeWidth={1.7} /></button>
+        <button className={`activity-button ${sidebarOpen && sideView === 'bookmarks' ? 'selected' : ''}`} type="button" data-tooltip={t('书签')} data-tooltip-placement="right" aria-label={t('书签')} aria-pressed={sidebarOpen && sideView === 'bookmarks'} onClick={() => { if (sidebarOpen && sideView === 'bookmarks') setSidebarOpen(false); else { setSideView('bookmarks'); setSidebarOpen(true) } }}><Bookmark size={19} strokeWidth={1.7} /></button>
         <div className="activity-spacer" />
-        <button className={`activity-button ${panelOpen && panelView === 'todo' ? 'selected' : ''}`} type="button" title="TODO" aria-label="TODO" onClick={() => { setPanelView('todo'); setPanelOpen((value) => panelView === 'todo' ? !value : true) }}><Braces size={19} strokeWidth={1.7} /></button>
-        <button className={`activity-button ${panelOpen && panelView === 'output' ? 'selected' : ''}`} type="button" title={t('Run')} aria-label={t('Run')} onClick={() => { setPanelView('output'); setPanelOpen((value) => panelView === 'output' ? !value : true) }}><Play size={19} /></button>
-        <button className={`activity-button ${panelOpen && panelView === 'tests' ? 'selected' : ''}`} type="button" title={t('Test')} aria-label={t('Test')} onClick={() => { setPanelView('tests'); setPanelOpen((value) => panelView === 'tests' ? !value : true) }}><FlaskConical size={19} /></button>
-        <button className={`activity-button ${panelOpen && panelView === 'terminal' ? 'selected' : ''}`} type="button" title={t('Terminal')} aria-label={t('Terminal')} onClick={() => { setPanelView('terminal'); setPanelOpen((value) => panelView === 'terminal' ? !value : true) }}><TerminalSquare size={19} /></button>
-        <button className={`activity-button ${panelOpen && panelView === 'problems' ? 'selected' : ''}`} type="button" title={t('Problems')} aria-label={t('Problems')} onClick={() => { setPanelView('problems'); setPanelOpen((value) => panelView === 'problems' ? !value : true) }}><AlertCircle size={19} /></button>
+        <button className={`activity-button ${panelOpen && panelView === 'todo' ? 'selected' : ''}`} type="button" data-tooltip="TODO" data-tooltip-placement="right" aria-label="TODO" onClick={() => { setPanelView('todo'); setPanelOpen((value) => panelView === 'todo' ? !value : true) }}><Braces size={19} strokeWidth={1.7} /></button>
+        <button className={`activity-button ${panelOpen && panelView === 'output' ? 'selected' : ''}`} type="button" data-tooltip={t('Run')} data-tooltip-placement="right" aria-label={t('Run')} onClick={() => { setPanelView('output'); setPanelOpen((value) => panelView === 'output' ? !value : true) }}><Play size={19} /></button>
+        <button className={`activity-button ${panelOpen && panelView === 'tests' ? 'selected' : ''}`} type="button" data-tooltip={t('Test')} data-tooltip-placement="right" aria-label={t('Test')} onClick={() => { setPanelView('tests'); setPanelOpen((value) => panelView === 'tests' ? !value : true) }}><FlaskConical size={19} /></button>
+        <button className={`activity-button ${panelOpen && panelView === 'terminal' ? 'selected' : ''}`} type="button" data-tooltip={t('Terminal')} data-tooltip-placement="right" aria-label={t('Terminal')} onClick={() => { setPanelView('terminal'); setPanelOpen((value) => panelView === 'terminal' ? !value : true) }}><TerminalSquare size={19} /></button>
+        <button className={`activity-button ${panelOpen && panelView === 'problems' ? 'selected' : ''}`} type="button" data-tooltip={t('Problems')} data-tooltip-placement="right" aria-label={t('Problems')} onClick={() => { setPanelView('problems'); setPanelOpen((value) => panelView === 'problems' ? !value : true) }}><AlertCircle size={19} /></button>
       </nav>
       {sidebarOpen && <Sidebar
         t={t} locale={locale} sideView={sideView} root={root} tree={tree} expanded={expanded}
@@ -1832,7 +1847,7 @@ function App() {
         setBranchMenu={setBranchMenu} commitMessage={commitMessage} setCommitMessage={setCommitMessage}
         openGitDiff={openGitDiff} updateGitIndex={updateGitIndex} commitGit={commitGit}
         remoteBusy={remoteBusy} gitFetch={gitFetch} gitPull={gitPull} gitPush={gitPush}
-        mergeConflicts={mergeConflicts ?? []} gitAbortMerge={gitAbortMerge} openMergeResolver={openMergeResolver}
+        mergeConflicts={mergeConflicts ?? EMPTY_MERGE_CONFLICTS} gitAbortMerge={gitAbortMerge} openMergeResolver={openMergeResolver}
         openGitGraph={openGitGraph} stashEntries={stashEntries}
         gitStashPush={gitStashPush} gitStashPop={gitStashPop} gitStashDrop={gitStashDrop}
         recentProjects={recentProjects} openRecentProject={openRecentProject}
@@ -1887,8 +1902,8 @@ function App() {
       />
       </EditorArea>
       <nav className="right-stripe" aria-label={t('右侧工具窗口')}>
-        <button type="button" title={t('随处搜索')} aria-label={t('随处搜索')} onClick={() => openPalette()}><Search size={18} /></button>
-        <button className={panelOpen && panelView === 'problems' ? 'selected' : ''} type="button" title={t('Problems')} aria-label={t('Problems')} onClick={() => { setPanelView('problems'); setPanelOpen(true) }}><AlertCircle size={18} /></button>
+        <button type="button" data-tooltip={t('随处搜索')} data-tooltip-placement="left" aria-label={t('随处搜索')} onClick={() => openPalette()}><Search size={18} /></button>
+        <button className={panelOpen && panelView === 'problems' ? 'selected' : ''} type="button" data-tooltip={t('Problems')} data-tooltip-placement="left" aria-label={t('Problems')} onClick={() => { setPanelView('problems'); setPanelOpen(true) }}><AlertCircle size={18} /></button>
       </nav>
     </div>
 

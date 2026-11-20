@@ -31,7 +31,7 @@ import type {
 import { fileUri, normalizePath, uriToPath } from './uri'
 import { workspaceEditChanges } from './workspaceEdit'
 import { goSourceDeclarations } from '../goTests'
-import { applyMonacoContentChanges } from './contentSync'
+import { applyMonacoContentChanges, canApplyMonacoContentChanges } from './contentSync'
 
 type MonacoApi = typeof import('monaco-editor')
 
@@ -403,6 +403,8 @@ export class GoplsClient {
       ? { range: { start: { line: 0, character: 0 }, end: endPosition(document.text) }, text }
       : { text }
     document.text = text
+    document.modelVersion = undefined
+    document.model = undefined
     document.version += 1
     await this.notify('textDocument/didChange', {
       textDocument: { uri, version: document.version },
@@ -417,33 +419,53 @@ export class GoplsClient {
    * lag. Ranges refer to the pre-change document, so applying (and sending)
    * them back-to-front keeps every range valid.
    */
-  async changeDocumentIncremental(path: string, changes: readonly MonacoContentChange[], currentText: string): Promise<void> {
+  async changeDocumentIncremental(path: string, changes: readonly MonacoContentChange[], currentText: string, eventVersion?: number): Promise<void> {
     await this.start()
     const uri = fileUri(path)
-    // The editor may have advanced while gopls was starting. Its live model is
-    // authoritative; currentText is the snapshot from the triggering event.
     const model = this.monaco.editor.getModel(this.monaco.Uri.parse(uri))
-    const text = model?.getValue() ?? currentText
+    const liveVersion = model?.getVersionId()
+    // The editor may have advanced while gopls was starting. In the usual
+    // case the event already contains the current text, so avoid getValue().
+    const text = model && eventVersion !== undefined && liveVersion !== eventVersion
+      ? model.getValue() : currentText
+    const rememberVersion = () => {
+      const latest = this.documents.get(uri)
+      if (model && eventVersion !== undefined && liveVersion === eventVersion && latest?.text === text) {
+        latest.modelVersion = eventVersion
+        latest.model = model
+      }
+    }
     const document = this.documents.get(uri)
     if (!document) {
       await this.openDocument(path, text)
+      rememberVersion()
       return
     }
-    if (document.text === text) return
+    if (document.text === text) {
+      rememberVersion()
+      return
+    }
     if (!changes.length) {
       await this.changeDocument(path, text)
+      rememberVersion()
       return
     }
     const original = document.text
     // A missed edit (for example while didOpen was pending) makes Monaco's
     // ranges relative to a different document. Send the current full text in
     // that case so diagnostics are computed for what is actually on screen.
-    if (applyMonacoContentChanges(original, changes) !== text) {
+    const sequential = eventVersion !== undefined && liveVersion === eventVersion
+      && document.model === model
+      && document.modelVersion === eventVersion - 1
+      && canApplyMonacoContentChanges(original.length, changes, text.length)
+    if (!sequential && applyMonacoContentChanges(original, changes) !== text) {
       await this.changeDocument(path, text)
+      rememberVersion()
       return
     }
     if (this.syncKind !== 2) {
       await this.changeDocument(path, text)
+      rememberVersion()
       return
     }
     const contentChanges = [...changes].sort((left, right) => right.rangeOffset - left.rangeOffset).map((change) => ({
@@ -454,6 +476,8 @@ export class GoplsClient {
       text: change.text,
     }))
     document.text = text
+    document.modelVersion = liveVersion === eventVersion ? eventVersion : undefined
+    document.model = liveVersion === eventVersion ? model ?? undefined : undefined
     document.version += 1
     await this.notify('textDocument/didChange', {
       textDocument: { uri, version: document.version },

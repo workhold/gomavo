@@ -68,10 +68,27 @@ test('Go fallback highlights TODO markers inside single and multiline block comm
   assert.equal(tokenAt(rows[2], lines[2].indexOf('FIXME')), 'comment.todo.go')
   assert.equal(tokenAt(rows[5], lines[5].indexOf('HACK')), 'comment.todo.go')
   assert.equal(tokenAt(rows[7], lines[7].indexOf('TODO')), 'string.go')
-  const ranges = goTodoMarkerRanges(lines.join('\n'), rows)
+  const ranges = goTodoMarkerRanges(lines.join('\n'))
   assert.deepEqual(ranges.map(({ lineNumber, startColumn, endColumn }) => [
     lineNumber, lines[lineNumber - 1].slice(startColumn - 1, endColumn - 1),
   ]), [[1, 'TODO'], [3, 'todo'], [3, 'FIXME'], [6, 'HACK']])
+})
+
+test('TODO scan ignores strings and code across CRLF and multiline comments', () => {
+  const lines = [
+    'const quoted = "TODO // FIXME"',
+    'const raw = `',
+    '// TODO in raw string',
+    '` // HACK in comment',
+    '/* 中文 TODO begins',
+    ' * FIXME ends */ const x = "HACK"',
+    '// 中文 todo again',
+    'var x = 1 /* XXX */',
+  ]
+  const ranges = goTodoMarkerRanges(lines.join('\r\n'))
+  assert.deepEqual(ranges.map(({ lineNumber, startColumn, endColumn }) => [
+    lineNumber, lines[lineNumber - 1].slice(startColumn - 1, endColumn - 1),
+  ]), [[4, 'HACK'], [5, 'TODO'], [6, 'FIXME'], [7, 'todo'], [8, 'XXX']])
 })
 
 function encodeTokens(entries) {

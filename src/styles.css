@@ -516,7 +516,7 @@ kbd { color: var(--text-primary); background: var(--surface-hover); border-color
   flex: none;
   border: 1px solid var(--surface-raised);
   border-radius: 11px;
-  overflow: hidden;
+  overflow: visible;
   background: var(--surface-panel);
 }
 .panel-resize-handle {
@@ -553,6 +553,7 @@ kbd { color: var(--text-primary); background: var(--surface-hover); border-color
 .panel-tabs > button:not(.icon-button):hover { background: var(--surface-input); color: var(--text-primary); }
 .panel-tabs > button.selected:not(.icon-button) { background: var(--surface-hover); color: var(--text-primary); border: 0; }
 .panel-tabs > .icon-button { color: var(--text-primary); }
+.panel-body { overflow: hidden; border-radius: 0 0 10px 10px; }
 .panel-page { background: var(--surface-panel); }
 .panel-empty { color: var(--text-secondary); font-size: 12px; }
 .output-page { padding: 10px 14px 15px; font-size: 12px; }
@@ -680,7 +681,15 @@ kbd { color: var(--text-primary); background: var(--surface-hover); border-color
 .run-more { color: var(--text-primary); }
 .run-play:hover:not(:disabled), .run-stop:hover:not(:disabled), .run-more:hover:not(:disabled) { background: #ffffff17; }
 .run-play:disabled { color: var(--text-muted); }
-.run-config-anchor .config-menu { top: 38px; left: 0; width: 220px; }
+.run-config-anchor .config-menu {
+  position: fixed;
+  width: min(330px, calc(100vw - 16px));
+  min-width: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.config-menu button > span { min-width: 0; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.config-menu button > small { min-width: 0; max-width: 40%; flex: none; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .module-menu-anchor .module-menu { top: 38px; right: 0; }
 .menu-title { padding: 8px 10px 5px; color: var(--text-secondary); font-size: 11px; font-weight: 600; }
 .title-actions { flex: 1; }
@@ -1419,6 +1428,42 @@ html.theme-light .monaco-editor .gomavo-todo-marker { color: #8c6200 !important;
 .line-jump-dialog .dialog-actions > button.primary { background: #2e4d89; border-color: #2e4d89; color: #ffffff; }
 html.theme-light .overlay-backdrop { background: #8a90a066; }
 html.theme-light .line-jump-dialog { background: #ffffff; }
+
+/* Edge controls use the same visible hint on hover and keyboard focus. */
+button[data-tooltip] { position: relative; }
+button[data-tooltip]::after {
+  content: attr(data-tooltip);
+  position: absolute;
+  z-index: 1000;
+  width: max-content;
+  max-width: min(260px, calc(100vw - 24px));
+  padding: 6px 9px;
+  border: 1px solid #5a5e68;
+  border-radius: 6px;
+  background: #1e2025;
+  color: #f3f4f6;
+  box-shadow: 0 5px 18px #0008;
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1.35;
+  text-align: left;
+  white-space: normal;
+  pointer-events: none;
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity .12s ease, visibility .12s ease;
+}
+button[data-tooltip]:is(:hover, :focus-visible) { z-index: 1000; }
+button[data-tooltip]:is(:hover, :focus-visible)::after { opacity: 1; visibility: visible; }
+button[data-tooltip][aria-expanded="true"]::after { opacity: 0; visibility: hidden; }
+button[data-tooltip-placement="right"]::after { top: 50%; left: calc(100% + 8px); transform: translateY(-50%); }
+button[data-tooltip-placement="left"]::after { top: 50%; right: calc(100% + 8px); transform: translateY(-50%); }
+button[data-tooltip-placement="bottom"]::after { top: calc(100% + 8px); left: 50%; transform: translateX(-50%); }
+button[data-tooltip-placement="top"]::after { bottom: calc(100% + 8px); left: 50%; transform: translateX(-50%); }
+.title-actions button[data-tooltip-placement="bottom"]::after,
+.panel-tabs > .icon-button[data-tooltip-placement="top"]::after { left: auto; right: 0; transform: none; }
+.title-left button[data-tooltip-placement="bottom"]::after { left: 0; transform: none; }
+
 /* A render error must stay visible inside the native window. */
 .app-error { min-height: 100vh; box-sizing: border-box; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; padding: 32px; background: #24272a; color: #e7e9ed; text-align: center; }
 .app-error h1, .app-error p { margin: 0; }

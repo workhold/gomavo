@@ -5,7 +5,7 @@ settings:
   excludeLinksFromLockfile: false
 
 patchedDependencies:
-  monaco-editor@0.57.0: 6876fbe984aa8b4b79df44d7e717b015b794fc9a95879994965aea0cf5fa81cf
+  monaco-editor@0.57.0: 72871f6c668120598ea079b41f3bc6d55b5372eac7388444ac15eeb5123c1bfe
 
 importers:
 
@@ -13,7 +13,7 @@ importers:
     dependencies:
       '@monaco-editor/react':
         specifier: ^4.7.0
-        version: 4.7.0(monaco-editor@0.57.0(patch_hash=6876fbe984aa8b4b79df44d7e717b015b794fc9a95879994965aea0cf5fa81cf))(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
+        version: 4.7.0(monaco-editor@0.57.0(patch_hash=72871f6c668120598ea079b41f3bc6d55b5372eac7388444ac15eeb5123c1bfe))(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
       '@tauri-apps/api':
         specifier: ^2.12.4
         version: 2.12.4
@@ -31,7 +31,7 @@ importers:
         version: 1.72.0(@types/react@19.3.0)(react@19.3.1)
       monaco-editor:
         specifier: ^0.57.0
-        version: 0.57.0(patch_hash=6876fbe984aa8b4b79df44d7e717b015b794fc9a95879994965aea0cf5fa81cf)
+        version: 0.57.0(patch_hash=72871f6c668120598ea079b41f3bc6d55b5372eac7388444ac15eeb5123c1bfe)
       react:
         specifier: ^19.2.0
         version: 19.3.1
@@ -1091,10 +1091,10 @@ snapshots:
     dependencies:
       state-local: 1.0.7
 
-  '@monaco-editor/react@4.7.0(monaco-editor@0.57.0(patch_hash=6876fbe984aa8b4b79df44d7e717b015b794fc9a95879994965aea0cf5fa81cf))(react-dom@19.3.1(react@19.3.1))(react@19.3.1)':
+  '@monaco-editor/react@4.7.0(monaco-editor@0.57.0(patch_hash=72871f6c668120598ea079b41f3bc6d55b5372eac7388444ac15eeb5123c1bfe))(react-dom@19.3.1(react@19.3.1))(react@19.3.1)':
     dependencies:
       '@monaco-editor/loader': 1.7.0
-      monaco-editor: 0.57.0(patch_hash=6876fbe984aa8b4b79df44d7e717b015b794fc9a95879994965aea0cf5fa81cf)
+      monaco-editor: 0.57.0(patch_hash=72871f6c668120598ea079b41f3bc6d55b5372eac7388444ac15eeb5123c1bfe)
       react: 19.3.1
       react-dom: 19.3.1(react@19.3.1)
 
@@ -1404,7 +1404,7 @@ snapshots:
 
   marked@14.0.0: {}
 
-  monaco-editor@0.57.0(patch_hash=6876fbe984aa8b4b79df44d7e717b015b794fc9a95879994965aea0cf5fa81cf):
+  monaco-editor@0.57.0(patch_hash=72871f6c668120598ea079b41f3bc6d55b5372eac7388444ac15eeb5123c1bfe):
     dependencies:
       dompurify: 3.4.15
       marked: 14.0.0

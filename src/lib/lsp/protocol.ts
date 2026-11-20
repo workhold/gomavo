@@ -109,6 +109,9 @@ export interface PendingRequest {
 export interface OpenDocument {
   text: string
   version: number
+  /** Monaco version associated with text, when a content event established it. */
+  modelVersion?: number
+  model?: Monaco.editor.ITextModel
 }
 
 export interface LspCommand {

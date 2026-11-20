@@ -120,9 +120,12 @@ jobs:
           tagName: ${{ github.ref_name }}
           releaseName: 'GoMavo ${{ github.ref_name }}'
           releaseBody: |
-            GoMavo ${{ github.ref_name }} reduces typing lag while the bottom tool window is open. Test results, run output, the terminal, and the debugger avoid unrelated renders. Repeated gopls diagnostics are deduplicated and short bursts are combined so the Problems count no longer flickers for each intermediate update.
+            GoMavo ${{ github.ref_name }} improves menu usability and editor responsiveness on large Go files.
 
-            The Problems count still updates when diagnostics actually change.
+            - The run configuration menu stays inside the window, scrolls when needed, and closes when you click elsewhere or open another menu.
+            - Icons around the top, left, right, and bottom edges now show hover and keyboard-focus hints.
+            - Editor input avoids unnecessary full-file reads and parsing during sequential gopls updates; surrounding React UI updates yield to typing.
+            - Chinese input composition stays aligned in WebKit when the preceding Go text contains long CJK sequences.
 
             macOS upgrade: remove the old `/Applications/MG Land.app` before copying `GoMavo.app` from the DMG into Applications. The two apps have the same bundle identifier to preserve existing settings, so leaving the old app installed can make macOS launch or display MG Land.
 

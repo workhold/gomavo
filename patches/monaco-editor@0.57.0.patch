@@ -1,5 +1,5 @@
 diff --git a/esm/vs/editor/browser/controller/editContext/textArea/textAreaEditContext.js b/esm/vs/editor/browser/controller/editContext/textArea/textAreaEditContext.js
-index 6410fd4e134c6a9292d8ae8435abdb8ab692e71d..31de08c5c316c4486d1ce4faa279de6eb23f78fe 100644
+index 6410fd4e134c6a9292d8ae8435abdb8ab692e71d..14f8e185353e4cdb0c219ee94f386e79d261a922 100644
 --- a/esm/vs/editor/browser/controller/editContext/textArea/textAreaEditContext.js
 +++ b/esm/vs/editor/browser/controller/editContext/textArea/textAreaEditContext.js
 @@ -144,8 +144,10 @@ let TextAreaEditContext = class TextAreaEditContext extends AbstractEditContext
@@ -15,7 +15,21 @@ index 6410fd4e134c6a9292d8ae8435abdb8ab692e71d..31de08c5c316c4486d1ce4faa279de6e
                      // On OSX, we write the character before the cursor to allow for "long-press" composition
                      // Also on OSX, we write the word before the cursor to allow for the Accessibility Keyboard to give good hints
                      const selection = this._selections[0];
-@@ -586,10 +588,12 @@ let TextAreaEditContext = class TextAreaEditContext extends AbstractEditContext
+@@ -155,6 +157,13 @@ let TextAreaEditContext = class TextAreaEditContext extends AbstractEditContext
+                         if (textBefore.length === 0) {
+                             textBefore = this._getCharacterBeforePosition(position);
+                         }
++                        // WebKit measures a long CJK word in the visible IME textarea
++                        // differently from Monaco's token spans. Keeping only the
++                        // preceding character prevents the overlay from drifting as
++                        // more Chinese characters are composed on the same line.
++                        if (/[\u3400-\u9fff\uf900-\ufaff]/u.test(textBefore)) {
++                            textBefore = this._getCharacterBeforePosition(position);
++                        }
+                         if (textBefore.length > 0) {
+                             return new TextAreaState(textBefore, textBefore.length, textBefore.length, Range.fromPositions(position), 0);
+                         }
+@@ -586,10 +595,12 @@ let TextAreaEditContext = class TextAreaEditContext extends AbstractEditContext
                  const lineHeight = this._context.viewLayout.getLineHeightForLineNumber(startPosition.lineNumber);
                  const fontSize = this._context.viewModel.getFontSizeAtPosition(this._primaryCursorPosition);
                  const viewLineData = this._context.viewModel.getViewLineData(startPosition.lineNumber);

@@ -1,4 +1,4 @@
-import { useCallback, type Dispatch, type RefObject, type SetStateAction } from 'react'
+import { startTransition, useCallback, type Dispatch, type RefObject, type SetStateAction } from 'react'
 import type { OnMount } from '@monaco-editor/react'
 import type * as Monaco from 'monaco-editor'
 import { fileUri, uriToPath, type GoplsClient } from '../../lib/lsp'
@@ -82,6 +82,9 @@ export function useEditorMount({
     const sourceFileContext = editor.createContextKey<boolean>('gomavoGoSourceFile', false)
     const sourceMethodContext = editor.createContextKey<boolean>('gomavoGoSourceMethod', false)
     const gitFileContext = editor.createContextKey<boolean>('gomavoGitWorkspaceFile', false)
+    let parsedModel: Monaco.editor.ITextModel | null = null
+    let parsedVersion = -1
+    let sourceDeclarations: ReturnType<typeof goSourceDeclarations> = []
     const updateGoContexts = (line = editor.getPosition()?.lineNumber) => {
       const model = editor.getModel()
       const file = model ? tabsRef.current.find((item) => fileUri(item.path) === model.uri.toString()) : null
@@ -89,31 +92,25 @@ export function useEditorMount({
       const eligible = !!path && !!file && !file.readOnly && !file.binary && path.endsWith('.go') && !path.endsWith('_test.go') && isWorkspaceFile(rootRef.current, path)
       testFileContext.set(path?.endsWith('_test.go') ?? false)
       sourceFileContext.set(eligible)
-      sourceMethodContext.set(eligible && !!line && goSourceDeclarations(model!.getValue()).some((item) => item.startLine <= line && line <= item.endLine))
+      if (eligible && line && model && (model !== parsedModel || model.getVersionId() !== parsedVersion)) {
+        sourceDeclarations = goSourceDeclarations(model.getValue())
+        parsedModel = model
+        parsedVersion = model.getVersionId()
+      }
+      sourceMethodContext.set(eligible && !!line && sourceDeclarations.some((item) => item.startLine <= line && line <= item.endLine))
       gitFileContext.set(!!file && !!path && isWorkspaceFile(rootRef.current, path))
       createTestContextLineRef.current = line ?? null
     }
     updateGoContexts()
+    // These flags are consumed by the context menu. Its capture handler below
+    // refreshes them for the clicked line, so typing never needs a full parse.
     editor.onDidChangeModel(() => updateGoContexts())
-    // updateGoContexts scans the whole file for declarations; coalesce the
-    // per-keystroke and per-cursor-move calls into one parse per frame.
-    let goContextsFrame = 0
-    let goContextsLine: number | undefined
-    const scheduleGoContexts = (line?: number) => {
-      goContextsLine = line
-      if (goContextsFrame) return
-      goContextsFrame = requestAnimationFrame(() => {
-        goContextsFrame = 0
-        updateGoContexts(goContextsLine)
-      })
-    }
     const pruneModelBreakpoints = () => {
       const model = editor.getModel()
       if (model) pruneBreakpointsRef.current?.(uriToPath(model.uri.toString()), model.getLineCount())
     }
     editor.onDidChangeModel(pruneModelBreakpoints)
     editor.onDidChangeModelContent(() => {
-      scheduleGoContexts()
       pruneModelBreakpoints()
     })
     pruneModelBreakpoints()
@@ -132,9 +129,18 @@ export function useEditorMount({
     editor.addCommand(monaco.KeyMod.Alt | monaco.KeyCode.Enter, () => {
       void editor.trigger('gomavo', 'editor.action.codeAction', { kind: 'quickfix' })
     }, '!suggestWidgetVisible')
+    let cursorFrame = 0
+    let nextCursor = { line: 1, column: 1 }
     editor.onDidChangeCursorPosition((event) => {
-      setCursor({ line: event.position.lineNumber, column: event.position.column })
-      scheduleGoContexts(event.position.lineNumber)
+      nextCursor = { line: event.position.lineNumber, column: event.position.column }
+      if (!cursorFrame) cursorFrame = requestAnimationFrame(() => {
+        cursorFrame = 0
+        startTransition(() => setCursor(nextCursor))
+      })
+      createTestContextLineRef.current = event.position.lineNumber
+    })
+    editor.onDidDispose(() => {
+      if (cursorFrame) cancelAnimationFrame(cursorFrame)
     })
     editor.onDidChangeModel(() => requestAnimationFrame(applyNavigation))
     const editorHost = editor.getContainerDomNode()

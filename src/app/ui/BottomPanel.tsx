@@ -324,6 +324,7 @@ export const BottomPanel = memo(function BottomPanel(props: BottomPanelProps) {
 
   const tab = (view: PanelView, label: string, icon: ReactNode, extra?: ReactNode) => <button
     className={panelView === view ? 'selected' : ''} type="button"
+    data-tooltip={label} data-tooltip-placement="top"
     onClick={() => { setPanelView(view); setPanelOpen(true) }}
   >{icon}{label}{extra}</button>
 
@@ -355,12 +356,12 @@ export const BottomPanel = memo(function BottomPanel(props: BottomPanelProps) {
       {tab('problems', t('Problems'), <AlertCircle size={14} />, diagnostics.length > 0 ? <span className="panel-count">{diagnostics.length}</span> : null)}
       {gitGraph.length > 0 ? tab('log', t('Git 日志'), <GitBranch size={14} />) : null}
       {mergeConflicts.length > 0 ? tab('merge', t('合并冲突'), <GitBranch size={14} />, <span className="panel-count">{mergeConflicts.length}</span>) : null}
-      {gitDiff && <button className={panelView === 'diff' ? 'selected' : ''} type="button" onClick={() => { setPanelView('diff'); setPanelOpen(true) }}><GitBranch size={14} />Diff · {displayName(gitDiff.path)}</button>}
-      {gitFileHistory && <button className={panelView === 'history' ? 'selected' : ''} type="button" onClick={() => { setPanelView('history'); setPanelOpen(true) }}><History size={14} />{t('文件历史')} · {displayName(gitFileHistory.path)}</button>}
+      {gitDiff && <button className={panelView === 'diff' ? 'selected' : ''} type="button" data-tooltip={`Diff · ${displayName(gitDiff.path)}`} data-tooltip-placement="top" onClick={() => { setPanelView('diff'); setPanelOpen(true) }}><GitBranch size={14} />Diff · {displayName(gitDiff.path)}</button>}
+      {gitFileHistory && <button className={panelView === 'history' ? 'selected' : ''} type="button" data-tooltip={`${t('文件历史')} · ${displayName(gitFileHistory.path)}`} data-tooltip-placement="top" onClick={() => { setPanelView('history'); setPanelOpen(true) }}><History size={14} />{t('文件历史')} · {displayName(gitFileHistory.path)}</button>}
       <div className="panel-tabs-spacer" />
-      {panelView === 'output' && iconButton(t('清空输出'), Trash2, () => setOutput([]))}
-      {panelView === 'tests' && iconButton(t('重新运行测试'), RefreshCw, () => void runTask('test', lastTestOptionsRef.current), !root || !!runningTask)}
-      {iconButton(t(panelOpen ? '收起工具窗口' : '展开工具窗口'), panelOpen ? PanelBottomClose : PanelBottomOpen, () => setPanelOpen((value) => !value))}
+      {panelView === 'output' && iconButton(t('清空输出'), Trash2, () => setOutput([]), false, '', 'top')}
+      {panelView === 'tests' && iconButton(t('重新运行测试'), RefreshCw, () => void runTask('test', lastTestOptionsRef.current), !root || !!runningTask, '', 'top')}
+      {iconButton(t(panelOpen ? '收起工具窗口' : '展开工具窗口'), panelOpen ? PanelBottomClose : PanelBottomOpen, () => setPanelOpen((value) => !value), false, '', 'top')}
     </div>
     <div className="panel-body">
       <div className={`panel-page ${panelView === 'terminal' ? 'visible' : ''}`}><TerminalPane root={root} visible={panelOpen && panelView === 'terminal'} locale={locale} fontSize={terminalFontSize} /></div>

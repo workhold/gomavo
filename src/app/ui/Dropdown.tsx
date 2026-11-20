@@ -13,11 +13,12 @@ export interface DropdownProps<V extends string = string> {
   /** Accessible label; also used as the placeholder title. */
   ariaLabel: string
   className?: string
+  tooltipPlacement?: 'top' | 'bottom' | 'left' | 'right'
 }
 
 /** App-styled select replacement: button + popover with keyboard navigation. */
 export function Dropdown<V extends string = string>(props: DropdownProps<V>) {
-  const { value, options, onChange, ariaLabel, className } = props
+  const { value, options, onChange, ariaLabel, className, tooltipPlacement } = props
   const [open, setOpen] = useState(false)
   const [highlight, setHighlight] = useState(0)
   const rootRef = useRef<HTMLDivElement | null>(null)
@@ -49,7 +50,9 @@ export function Dropdown<V extends string = string>(props: DropdownProps<V>) {
       aria-haspopup="listbox"
       aria-expanded={open}
       aria-label={ariaLabel}
-      title={current?.label ?? ariaLabel}
+      title={tooltipPlacement ? undefined : current?.label ?? ariaLabel}
+      data-tooltip={tooltipPlacement ? ariaLabel : undefined}
+      data-tooltip-placement={tooltipPlacement}
       onClick={() => setOpen((current_) => !current_)}
       onKeyDown={(event) => {
         if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
